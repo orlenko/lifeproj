@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lifeproj"
+version = "0.1.0"
+description = "A thin orchestrator for tekas: local, encrypted, Claude-maintained life-admin projects."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Vlad Orlenko", email = "vlad@orlenko.ca" }]
+keywords = ["cli", "life-admin", "cmirror", "imap-extract", "claude"]
+dependencies = ["tomlkit>=0.12"]
+
+[project.urls]
+Homepage = "https://github.com/orlenko/lifeproj"
+
+[project.scripts]
+lifeproj = "lifeproj.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lifeproj"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/lifeproj", "docs", "tests", "README.md", "LICENSE"]
