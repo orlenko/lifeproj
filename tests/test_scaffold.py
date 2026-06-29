@@ -23,8 +23,10 @@ class ScaffoldTests(unittest.TestCase):
             plan = self._build(tmp, [])
             res = scaffold.apply(plan)
             wd = Path(res["working_dir"])
-            for f in ("CLAUDE.md", "README.md", "DASHBOARD.md", "catalog.json", "catalog_check.py", ".gitignore"):
+            for f in ("CLAUDE.md", "README.md", "DASHBOARD.md", "catalog.json", "catalog_check.py"):
                 self.assertTrue((wd / f).exists(), f)
+            # Tekas are local-only (no git), so no .gitignore is scaffolded.
+            self.assertFalse((wd / ".gitignore").exists())
             catalog = json.loads((wd / "catalog.json").read_text())
             self.assertEqual(catalog["meta"]["schema_version"], 1)
             self.assertEqual(catalog["documents"], [])

@@ -42,7 +42,7 @@ MODULES: dict[str, Module] = {
 New mail for this teka arrives via **imap-extract** (homebrew tap) reading one
 IMAP label into `intake/mail/` as dated `.md` files (frontmatter + body, with a
 sibling `… attachments/` dir). Config and sync state live in `scripts/mail/`
-(`.env` + `state.json`, both gitignored) — deliberately *outside* `intake/`, so
+(`.env` + `state.json`, local secrets) — deliberately *outside* `intake/`, so
 the drain folder stays disposable.
 
 Pull once: `cd scripts/mail && imap-extract --once` (it reads `./.env`, writes its
@@ -60,7 +60,7 @@ Never keep anything of record there.
         summary="manual document drop + OCR/convert pipeline",
         dirs=["intake"],
         repo_rows=[
-            ("intake/_converted/", "Text extraction of dropped PDFs/images (gitignored, regenerable)."),
+            ("intake/_converted/", "Text extraction of dropped PDFs/images (regenerable, safe to delete)."),
         ],
         claude_section="""\
 ## Module: docs-intake
