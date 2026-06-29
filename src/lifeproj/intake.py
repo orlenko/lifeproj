@@ -1,4 +1,4 @@
-"""Render a teka's ``intake/mail/.env`` for imap-extract.
+"""Render a teka's ``scripts/mail/.env`` for imap-extract.
 
 cmirror is machine-wide; imap-extract is per-directory *on purpose* — different
 tekas may use different IMAP accounts/servers. So secrets are NOT centralised.
@@ -6,6 +6,11 @@ This shim composes a per-teka ``.env`` from an optional shared-secrets file (a
 sensible default account) plus the one value that actually varies per teka: the
 IMAP folder/label. The rendered ``.env`` is gitignored and only ever exists
 locally (cmirror then encrypts it like any other teka file).
+
+Config (``.env``) and sync state (``state.json``, written to cwd at run time)
+live in ``scripts/mail/`` — deliberately *outside* ``intake/``. ``intake/mail/``
+is the transient drain (``TARGET_DIR``) that gets emptied on filing and can be
+wiped and recreated without losing config or the imap-extract watermark.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ IMAP_PASSWORD=CHANGE_ME_app_password
 
 def render(imap_folder: str, target_dir: str,
            shared: Optional[Path] = None) -> str:
-    """Return the contents of a teka's intake/mail/.env."""
+    """Return the contents of a teka's scripts/mail/.env."""
     shared = shared if shared is not None else DEFAULT_SHARED
     if shared.exists():
         base = shared.read_text().rstrip() + "\n"
@@ -45,9 +50,15 @@ def render(imap_folder: str, target_dir: str,
 
 def write(teka_dir: Path, imap_folder: str,
           shared: Optional[Path] = None) -> Path:
-    mail = teka_dir / "intake" / "mail"
-    mail.mkdir(parents=True, exist_ok=True)
-    target = mail  # imap-extract drops .md here; state.json lands in cwd at run time
-    env_path = mail / ".env"
-    env_path.write_text(render(imap_folder, str(target), shared))
+    # Persistent: .env lives here, and imap-extract writes state.json to cwd when
+    # run from here. Kept out of intake/ so the drain stays disposable.
+    config_dir = teka_dir / "scripts" / "mail"
+    # Transient drain (TARGET_DIR): imap-extract drops one .md per email here.
+    drain_dir = teka_dir / "intake" / "mail"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    drain_dir.mkdir(parents=True, exist_ok=True)
+    env_path = config_dir / ".env"
+    # TARGET_DIR is read from scripts/mail/ but points at the drain — write it
+    # absolute so it resolves correctly no matter where imap-extract is run from.
+    env_path.write_text(render(imap_folder, str(drain_dir.resolve()), shared))
     return env_path
