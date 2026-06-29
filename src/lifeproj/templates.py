@@ -109,17 +109,6 @@ _None yet._
 See `CLAUDE.md` → Repository map.
 """
 
-TEKA_GITIGNORE = """\
-# Secrets and machine-local cruft — never commit a teka anyway, but just in case.
-.env
-**/.env
-.DS_Store
-**/.DS_Store
-intake/_converted/
-**/state.json
-*.tmp
-"""
-
 # A small, dependency-free validator copied INTO each teka (thick teka, thin
 # centre). Validates the core spine and any extra ``*[]`` arrays of objects with
 # an ``id``, so module-added arrays (entities, tenancies, …) are checked too.

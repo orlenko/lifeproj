@@ -84,7 +84,6 @@ def build(name: str, working_dir: Path, encrypted_dir: Path, *, domain: str,
         "DASHBOARD.md": templates.render(templates.DASHBOARD_TMPL, NAME=name),
         "catalog.json": json.dumps(catalog, indent=2) + "\n",
         "catalog_check.py": templates.CATALOG_CHECK,
-        ".gitignore": templates.TEKA_GITIGNORE,
     }
     dirs = ["intake", "scripts"]
     for m in mods:
