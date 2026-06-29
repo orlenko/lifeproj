@@ -89,7 +89,7 @@ def cmd_new(args) -> int:
     print(f"  1. Edit {working_dir}/CLAUDE.md (the operating manual) and README.md.")
     if plan.imap_folder:
         print(f"  2. Create the IMAP label {plan.imap_folder!r}, then: "
-              f"cd {working_dir}/intake/mail && imap-extract --once")
+              f"cd {working_dir}/scripts/mail && imap-extract --once")
     print(f"  3. First backup: cmirror backup --project {name}")
     print(f"  4. Open {working_dir} in Claude Code and run the digest ritual.")
     return 0

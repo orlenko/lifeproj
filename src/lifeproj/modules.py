@@ -29,10 +29,11 @@ MODULES: dict[str, Module] = {
     "email-intake": Module(
         name="email-intake",
         summary="IMAP label → intake/mail → correspondence/<thread>/",
-        dirs=["intake/mail", "correspondence"],
+        dirs=["intake/mail", "scripts/mail", "correspondence"],
         needs_imap=True,
         repo_rows=[
-            ("intake/mail/", "imap-extract drops one .md per new email here; drained on filing."),
+            ("scripts/mail/", "imap-extract config + sync state (`.env`, `state.json`); persistent — run it from here."),
+            ("intake/mail/", "imap-extract drops one .md per new email here; drained on filing — safe to wipe & recreate."),
             ("correspondence/", "Filed email/letters in per-topic `correspondence/<thread>/` subfolders."),
         ],
         claude_section="""\
@@ -40,12 +41,18 @@ MODULES: dict[str, Module] = {
 
 New mail for this teka arrives via **imap-extract** (homebrew tap) reading one
 IMAP label into `intake/mail/` as dated `.md` files (frontmatter + body, with a
-sibling `… attachments/` dir). Config: `intake/mail/.env` (gitignored).
+sibling `… attachments/` dir). Config and sync state live in `scripts/mail/`
+(`.env` + `state.json`, both gitignored) — deliberately *outside* `intake/`, so
+the drain folder stays disposable.
 
-Pull once: `cd intake/mail && imap-extract --once`. File during the digest ritual
-into `correspondence/<thread>/` as `YYYY-MM-DD-HHMM_sender.md`; route attachments
-to their category folder, not into correspondence. Catalog an email *thread* as
-one record; a standalone document of record gets its own.
+Pull once: `cd scripts/mail && imap-extract --once` (it reads `./.env`, writes its
+`state.json` here, and drops mail into `intake/mail/` via `TARGET_DIR`). File during
+the digest ritual into `correspondence/<thread>/` as `YYYY-MM-DD-HHMM_sender.md`;
+route attachments to their category folder, not into correspondence. Catalog an
+email *thread* as one record; a standalone document of record gets its own.
+
+`intake/mail/` holds only un-filed items; it can be wiped and recreated freely.
+Never keep anything of record there.
 """,
     ),
     "docs-intake": Module(

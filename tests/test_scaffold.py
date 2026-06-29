@@ -34,9 +34,16 @@ class ScaffoldTests(unittest.TestCase):
             plan = self._build(tmp, ["email-intake"], imap_folder="Labels/Demo")
             res = scaffold.apply(plan)
             wd = Path(res["working_dir"])
-            self.assertTrue((wd / "intake" / "mail" / ".env").exists())
+            env = wd / "scripts" / "mail" / ".env"
+            # Config lives in scripts/mail (persistent), NOT in the intake drain.
+            self.assertTrue(env.exists())
+            self.assertFalse((wd / "intake" / "mail" / ".env").exists())
+            self.assertTrue((wd / "intake" / "mail").is_dir())
             self.assertTrue((wd / "correspondence").is_dir())
-            self.assertIn("IMAP_FOLDER=Labels/Demo", (wd / "intake" / "mail" / ".env").read_text())
+            body = env.read_text()
+            self.assertIn("IMAP_FOLDER=Labels/Demo", body)
+            # Mail still drains into intake/mail via TARGET_DIR (absolute path).
+            self.assertIn(f"TARGET_DIR={(wd / 'intake' / 'mail').resolve()}", body)
             self.assertIn("Module: email-intake", (wd / "CLAUDE.md").read_text())
 
     def test_entities_module_adds_catalog_array(self):
