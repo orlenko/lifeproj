@@ -59,7 +59,7 @@ lifeproj restore tax-2025
 
 `lifeproj new` stamps the folder, renders `CLAUDE.md` + a validated `catalog.json`
 + the chosen modules, registers a `[projects.<name>]` block in cmirror's config,
-and renders `intake/mail/.env` from your shared IMAP secrets + the one varying
+and renders `scripts/mail/.env` from your shared IMAP secrets + the one varying
 label. Then you open the folder in Claude Code and work it.
 
 ## Modules (opt-in)
@@ -76,9 +76,19 @@ plus the modules it turns on:
 | `ledger` | typed transactions that sum (rent, fees) |
 | `chapters` | finite episodes inside an ongoing teka (e.g. tenancies) |
 | `entities` | a table of comparable records you track/compare |
+| `osavul` | publish an agenda slice to the cross-teka [Osavul](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up) spool each digest |
 
 Domain overlays (`legal`, `tenancy`, `condo`, `product`) add the right guardrails
 on top — privilege caution, governing-law citations, etc.
+
+## Cross-teka roll-up (Osavul)
+
+Every teka keeps a strict, current `open_items[]` task list (enforced by
+`catalog_check.py`). A teka with the `osavul` module runs `lifeproj publish` as the
+last step of each digest, projecting that list into a standard **agenda slice** on a
+shared spool so a chief-of-staff teka can answer "what needs me today, *everywhere*?"
+— without any teka reading another's files. `lifeproj drain` (v2 stub) is the return
+channel. The contract lives in **[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up)**.
 
 ## Privacy posture
 
@@ -88,7 +98,8 @@ passphrase — the age identity stays in cmirror's own config, outside every tek
 
 ## Status
 
-v0.1 — `new`, `overview`, `archive`, `restore` work; covered by tests. Generic
-intake/convert tools live in the homebrew tap and are called, not vendored here.
+v0.4 — `new`, `overview`, `archive`, `restore`, `publish` work and `drain` is a
+documented stub; covered by tests. Generic intake/convert tools live in the
+homebrew tap and are called, not vendored here.
 
 MIT licensed.

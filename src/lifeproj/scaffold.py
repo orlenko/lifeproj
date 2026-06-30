@@ -59,7 +59,7 @@ def build(name: str, working_dir: Path, encrypted_dir: Path, *, domain: str,
     # --- catalog.json (spine + module arrays) ---
     catalog = {
         "meta": {
-            "schema_version": 1,
+            "schema_version": 2,
             "name": name,
             "domain": domain,
             "lifecycle": lifecycle,

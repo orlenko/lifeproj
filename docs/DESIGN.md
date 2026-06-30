@@ -142,7 +142,7 @@ knowledge of my tekas?*
 ## 7. Lifecycle, end to end
 
 1. **Create** — `lifeproj new <name> --intake … --artifact …` stamps the spine +
-   modules, registers `[projects.<name>]`, renders `intake/mail/.env`.
+   modules, registers `[projects.<name>]`, renders `scripts/mail/.env`.
 2. **Wire intake** — create the IMAP label; for email tekas run `imap-extract
    --once` (or on a schedule). For dogfooding, point `sources/github.toml` at the
    repo.
@@ -183,7 +183,101 @@ never stored in the cloud in plain form, and never pasted into web tools.
   jargon that biases the skeleton toward timelines/privilege and doesn't fit a
   finite, transactional teka.
 
-## 10. Non-goals (deliberately not built)
+## 10. Osavul integration (cross-teka roll-up)
+
+A teka cannot read another teka's folder — each runs in its own sandbox. **Osavul**
+(a separate chief-of-staff teka) answers "what needs me today, *everywhere*?" by
+reading a neutral **spool** that sits in every session's grant set. lifeproj owns
+the *publish/drain mechanism*; the cross-teka roll-up itself is Osavul's job, not
+lifeproj's.
+
+**Two layers, deliberately split:**
+
+- **CORE (every teka):** the strict `open_items[]` task schema + the digest
+  discipline that keeps it current (`catalog_check.py` enforces it for
+  `schema_version >= 2`; §3). Pure quality, no Osavul dependency.
+- **`osavul` module (opt-in):** the publish-to-spool step. A teka that doesn't
+  enable it simply never publishes; nothing else changes.
+
+**The spool** — `~/.local/share/osavul/`, a sibling of the already-granted
+`undrudge/` spool (one line in the sandbox profile grants it everywhere):
+
+```
+inbox/   <teka>.agenda.json   each teka WRITES its slice; Osavul READS all
+outbox/  <teka>.intake.json   Osavul WRITES routed items; each teka READS+drains (v2)
+state/                        Osavul's merged output
+```
+
+Self-registering: a teka enters Osavul's world the first time it publishes, so
+there is **no new registry** — cmirror's config stays the registry for backup, the
+spool is the registry for Osavul. (`OSAVUL_SPOOL` overrides the path for tests.)
+
+**Why lifeproj, not the tap, not a copied-in script** (the §6 litmus): the
+mechanism knows about tekas + the spool convention → useless to a stranger → *not*
+the public homebrew tap. And the agenda slice is a shared interface Osavul reads
+from every teka, so it must stay byte-identical → single-sourced as a `lifeproj`
+subcommand, *not* copied-in-and-divergeable like `catalog_check.py` (whose per-teka
+variation is legitimate; the slice's is not).
+
+### `lifeproj publish` / `lifeproj drain`
+
+- **`lifeproj publish`** — run from inside a teka. Reads `catalog.json`, validates
+  `open_items[]`, projects them into the agenda slice, writes
+  `inbox/<teka>.agenda.json` atomically (temp + `os.replace`). No-ops cleanly with a
+  one-line grant hint if the spool isn't provisioned — safe as the last digest step.
+- **`lifeproj drain`** *(v2 stub — wired later)* — reads `outbox/<teka>.intake.json`,
+  files each routed item into the teka's `intake/`, then clears the slot. Exists and
+  documented now so the downstream specs can build against it.
+
+### The contract (frozen) — agenda slice: `inbox/<teka>.agenda.json`
+
+```json
+{
+  "teka": "cote",
+  "lifecycle": "ongoing",               // ongoing | finite
+  "active_chapter": null,               // chapter name, or null
+  "generated": "2026-06-30T17:00:00Z",  // ISO8601 UTC; Osavul derives staleness
+  "items": [
+    {
+      "id": "cote-2026-001",            // stable, teka-prefixed, never reused
+      "title": "File AGM notice",
+      "status": "open",                 // open | waiting | blocked | done
+      "priority": "high",               // high | normal | low
+      "due": "2026-07-05",              // ISO date, or null
+      "no_deadline": false,             // true = intentionally dateless (null != forgotten)
+      "tags": ["agm"],
+      "waiting_on": null,               // free text; required when status = waiting|blocked
+      "link": "DASHBOARD.md#cote-2026-001"  // relative path WITHIN the teka
+    }
+  ]
+}
+```
+
+Rules: `id`, `title`, `status`, `priority` required; `due` XOR `no_deadline:true`
+(nothing silently dateless); `waiting`/`blocked` require `waiting_on`; `done` items
+appear once then drop from the next slice.
+
+### The contract (frozen) — return channel (v2): `outbox/<teka>.intake.json`
+
+```json
+{
+  "teka": "cote",
+  "generated": "2026-06-30T17:00:00Z",
+  "items": [
+    {
+      "title": "Call management co about parking",  // required
+      "note": "from Todoist capture 2026-06-30",    // optional free text
+      "due": "2026-07-10",                           // optional ISO date, or null
+      "source": "todoist"                            // optional provenance tag
+    }
+  ]
+}
+```
+
+Osavul writes it; the teka drains it on its next digest (turning each into a real
+`open_item` with a fresh teka-prefixed `id`), then empties the slot.
+
+## 11. Non-goals (deliberately not built)
 
 - **No `matter.toml`** — a third config surface duplicating cmirror + imap-extract,
   and a security regression. The registry is cmirror's config.

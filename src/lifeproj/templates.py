@@ -41,7 +41,8 @@ CLAUDE_HEADER = """\
 - **The digest ritual** (run it whenever new material lands): drain `intake/` →
   for each item read → classify → rename to `YYYY-MM-DD_slug` → move into the
   right folder → record it in `catalog.json` → append a `processing_log[]` entry
-  → regenerate `DASHBOARD.md` → leave `intake/` empty. Never delete originals.
+  → **reconcile `open_items[]`** (see below) → regenerate `DASHBOARD.md` → leave
+  `intake/` empty. Never delete originals.
 - **Monitors flag, humans act.** Intake/watchers only surface new material. Never
   send a message, sign, pay, or commit anything outbound without Vlad's explicit
   approval. Drafts wait in place for review.
@@ -49,6 +50,27 @@ CLAUDE_HEADER = """\
   machine is the *encrypted* cmirror backup. Do not paste teka contents into web
   tools or external services.
 - **Validate state.** Run `python3 catalog_check.py` after editing `catalog.json`.
+
+## Open items — the task schema (kept current, every digest)
+
+`open_items[]` is this teka's live to-do list and the basis of any cross-teka
+roll-up. Each item is an object:
+
+- `id` — stable, teka-prefixed, **never reused** (e.g. `{{NAME}}-2026-001`)
+- `title` — one line
+- `status` — `open | waiting | blocked | done`
+- `priority` — `high | normal | low`
+- `due` *(ISO date `YYYY-MM-DD`)* **XOR** `no_deadline: true` — exactly one, so
+  nothing is ever silently dateless
+- `waiting_on` — free text, **required** when status is `waiting` or `blocked`
+- `tags` *(optional list)* · `link` *(optional, relative path within this teka)*
+
+**Reconcile every digest** (right after filing intake): confirm each `status`
+still reflects reality; give every item a real `due` or an explicit
+`no_deadline`; record completed work in append-only `processing_log[]` and drop
+it from `open_items[]` once it has shown as `done` once. Then regenerate
+`DASHBOARD.md` (Overdue · Due soon ≤7d · No deadline · everything else) and run
+`python3 catalog_check.py` — it enforces this schema.
 """
 
 CLAUDE_FOOTER = """\
@@ -98,9 +120,21 @@ _Last updated: (set on first digest)_
 
 ## Open items
 
-_None yet._
+_Regenerate from `open_items[]` each digest: the three buckets first, then the rest._
 
-## Deadlines
+### ⏰ Overdue
+
+_None._
+
+### 📅 Due soon (≤7 days)
+
+_None._
+
+### 🗓 No deadline
+
+_None._
+
+### Everything else
 
 _None yet._
 
@@ -113,12 +147,62 @@ See `CLAUDE.md` → Repository map.
 # centre). Validates the core spine and any extra ``*[]`` arrays of objects with
 # an ``id``, so module-added arrays (entities, tenancies, …) are checked too.
 CATALOG_CHECK = r'''#!/usr/bin/env python3
-"""Validate this teka's catalog.json. Exit non-zero on any hard error."""
+"""Validate this teka's catalog.json. Exit non-zero on any hard error.
+
+schema_version >= 2 additionally enforces the strict open_items[] task schema
+(the Osavul agenda contract). schema_version 1 validates under the legacy rules,
+so an un-migrated teka keeps passing until it is migrated.
+"""
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 CORE_ARRAYS = ("documents", "open_items", "processing_log")
+STATUSES = ("open", "waiting", "blocked", "done")
+PRIORITIES = ("high", "normal", "low")
+
+
+def check_open_items(items, processing_log):
+    """Strict task schema — keep in sync with lifeproj's osavul.validate_open_items."""
+    errors = []
+    seen = set()
+    closed = {e["id"] for e in processing_log if isinstance(e, dict) and "id" in e}
+    for i, it in enumerate(items):
+        where = f"open_items[{i}]"
+        if not isinstance(it, dict):
+            errors.append(f"{where}: not an object")
+            continue
+        iid = it.get("id")
+        for field in ("id", "title", "status", "priority"):
+            if not it.get(field):
+                errors.append(f"{where}: missing required '{field}'")
+        if iid:
+            if iid in seen:
+                errors.append(f"{where}: duplicate id {iid!r}")
+            if iid in closed:
+                errors.append(f"{where}: id {iid!r} reused from processing_log")
+            seen.add(iid)
+        if it.get("status") and it["status"] not in STATUSES:
+            errors.append(f"{where}: bad status {it['status']!r} (use {'|'.join(STATUSES)})")
+        if it.get("priority") and it["priority"] not in PRIORITIES:
+            errors.append(f"{where}: bad priority {it['priority']!r} (use {'|'.join(PRIORITIES)})")
+        has_due = it.get("due") not in (None, "")
+        no_dl = it.get("no_deadline") is True
+        if has_due and no_dl:
+            errors.append(f"{where}: has both 'due' and no_deadline:true (use exactly one)")
+        if not has_due and not no_dl:
+            errors.append(f"{where}: needs a 'due' date or no_deadline:true (nothing silently dateless)")
+        if has_due:
+            try:
+                date.fromisoformat(it["due"])
+            except (ValueError, TypeError):
+                errors.append(f"{where}: 'due' not an ISO date (YYYY-MM-DD): {it['due']!r}")
+        if it.get("status") in ("waiting", "blocked") and not it.get("waiting_on"):
+            errors.append(f"{where}: status {it.get('status')!r} requires 'waiting_on'")
+        if "tags" in it and not isinstance(it["tags"], list):
+            errors.append(f"{where}: 'tags' must be a list")
+    return errors
 
 
 def main() -> int:
@@ -134,8 +218,11 @@ def main() -> int:
 
     errors = []
     meta = data.get("meta")
+    version = 0
     if not isinstance(meta, dict) or "schema_version" not in meta:
         errors.append("meta.schema_version missing")
+    else:
+        version = meta.get("schema_version", 0)
 
     counts = {}
     for key, value in data.items():
@@ -143,8 +230,9 @@ def main() -> int:
             continue
         if not all(isinstance(item, dict) for item in value):
             continue
-        ids = [item["id"] for item in value if "id" in item]
-        if ids:
+        # open_items dupes are reported precisely by the strict check below.
+        if not (key == "open_items" and isinstance(version, int) and version >= 2):
+            ids = [item["id"] for item in value if "id" in item]
             dupes = {i for i in ids if ids.count(i) > 1}
             if dupes:
                 errors.append(f"{key}[]: duplicate id(s): {sorted(dupes)}")
@@ -152,6 +240,13 @@ def main() -> int:
 
     for key in CORE_ARRAYS:
         data.setdefault(key, [])
+
+    if isinstance(version, int) and version >= 2:
+        errors.extend(check_open_items(data.get("open_items", []),
+                                       data.get("processing_log", [])))
+    else:
+        print("note: schema_version < 2 — strict open_items checks skipped "
+              "(legacy teka; see lifeproj docs/DESIGN.md to migrate).", file=sys.stderr)
 
     if errors:
         for e in errors:

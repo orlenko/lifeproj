@@ -13,7 +13,7 @@ import datetime
 import sys
 from pathlib import Path
 
-from lifeproj import __version__, archive, overview, scaffold
+from lifeproj import __version__, archive, osavul, overview, scaffold
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -122,6 +122,14 @@ def cmd_restore(args) -> int:
     return 0
 
 
+def cmd_publish(args) -> int:
+    return osavul.publish(Path(args.path).expanduser() if args.path else None)
+
+
+def cmd_drain(args) -> int:
+    return osavul.drain(Path(args.path).expanduser() if args.path else None)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="lifeproj", description="Orchestrate tekas (local, encrypted, Claude-maintained life-admin projects).")
     p.add_argument("--version", action="version", version=f"lifeproj {__version__}")
@@ -161,6 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("name")
     r.add_argument("--config")
     r.set_defaults(func=cmd_restore)
+
+    pub = sub.add_parser("publish", help="project this teka's open_items into the Osavul agenda spool")
+    pub.add_argument("--path", help="teka dir (default: current directory)")
+    pub.set_defaults(func=cmd_publish)
+
+    dr = sub.add_parser("drain", help="(v2 stub) file items Osavul routed back into this teka's intake")
+    dr.add_argument("--path", help="teka dir (default: current directory)")
+    dr.set_defaults(func=cmd_drain)
     return p
 
 
