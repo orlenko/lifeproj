@@ -28,8 +28,12 @@ class ScaffoldTests(unittest.TestCase):
             # Tekas are local-only (no git), so no .gitignore is scaffolded.
             self.assertFalse((wd / ".gitignore").exists())
             catalog = json.loads((wd / "catalog.json").read_text())
-            self.assertEqual(catalog["meta"]["schema_version"], 1)
+            self.assertEqual(catalog["meta"]["schema_version"], 2)
             self.assertEqual(catalog["documents"], [])
+            # Dashboard renders the three roll-up buckets.
+            dash = (wd / "DASHBOARD.md").read_text()
+            for bucket in ("Overdue", "Due soon", "No deadline"):
+                self.assertIn(bucket, dash)
 
     def test_email_module_renders_env_and_correspondence(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -73,6 +77,46 @@ class ScaffoldTests(unittest.TestCase):
                                   capture_output=True, text=True)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("catalog OK", proc.stdout)
+
+    def test_osavul_module_adds_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = self._build(tmp, ["osavul"])
+            claude = plan.files["CLAUDE.md"]
+            self.assertIn("Module: osavul", claude)
+            self.assertIn("lifeproj publish", claude)
+
+    def _run_check(self, wd, open_items):
+        catalog = json.loads((wd / "catalog.json").read_text())
+        catalog["open_items"] = open_items
+        (wd / "catalog.json").write_text(json.dumps(catalog, indent=2))
+        return subprocess.run([sys.executable, str(wd / "catalog_check.py")],
+                              capture_output=True, text=True)
+
+    def test_catalog_check_enforces_strict_open_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = Path(scaffold.apply(self._build(tmp, []))["working_dir"])
+            good = [{"id": "demo-2026-001", "title": "x", "status": "open",
+                     "priority": "high", "due": "2026-07-01"}]
+            self.assertEqual(self._run_check(wd, good).returncode, 0)
+            # neither due nor no_deadline
+            self.assertEqual(self._run_check(wd, [dict(good[0], due=None)]).returncode, 1)
+            # bad enum
+            self.assertEqual(self._run_check(wd, [dict(good[0], status="nope")]).returncode, 1)
+            # waiting without waiting_on
+            self.assertEqual(self._run_check(wd, [dict(good[0], status="waiting")]).returncode, 1)
+            # missing required field
+            self.assertEqual(self._run_check(wd, [{"id": "demo-2026-002"}]).returncode, 1)
+
+    def test_catalog_check_legacy_schema_skips_strict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = Path(scaffold.apply(self._build(tmp, []))["working_dir"])
+            catalog = json.loads((wd / "catalog.json").read_text())
+            catalog["meta"]["schema_version"] = 1  # un-migrated teka
+            catalog["open_items"] = [{"id": "loose", "title": "no schema here"}]
+            (wd / "catalog.json").write_text(json.dumps(catalog, indent=2))
+            proc = subprocess.run([sys.executable, str(wd / "catalog_check.py")],
+                                  capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":
