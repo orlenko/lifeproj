@@ -202,6 +202,10 @@ def check_open_items(items, processing_log):
             errors.append(f"{where}: status {it.get('status')!r} requires 'waiting_on'")
         if "tags" in it and not isinstance(it["tags"], list):
             errors.append(f"{where}: 'tags' must be a list")
+        if "redact" in it and not isinstance(it["redact"], bool):
+            errors.append(f"{where}: 'redact' must be true/false")
+        if "slice_title" in it and not (isinstance(it["slice_title"], str) and it["slice_title"]):
+            errors.append(f"{where}: 'slice_title' must be a non-empty string")
     return errors
 
 

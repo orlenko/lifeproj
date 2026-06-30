@@ -265,6 +265,15 @@ migration); `active_chapter` (string|null) is retained for the single-chapter ca
 and auto-filled when exactly one chapter is active. Osavul reads `active_chapters[]`
 when present and tolerates `active_chapter:null`.
 
+**Slice-boundary projection.** `publish` is the single chokepoint into the shared
+spool, so it normalises there. It **teka-prefixes** each slice `id` (`<teka>-<id>`,
+idempotently — already-prefixed catalog ids are left alone) so ids are globally
+unique in Osavul's merged view. And it **redacts** sensitive items at the boundary
+while the catalog keeps the natural text: `slice_title` gives an explicit
+replacement title, and `redact: true` emits a generic `title` (`[redacted]`) and
+`waiting_on` (`[party]`). `tags` pass through unchanged (Osavul keys on functional
+tags); the catalog's internal ids and `link` are untouched.
+
 ### The contract (frozen) — return channel (v2): `outbox/<teka>.intake.json`
 
 ```json

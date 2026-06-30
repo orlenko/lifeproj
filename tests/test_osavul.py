@@ -66,6 +66,35 @@ class OsavulTests(unittest.TestCase):
         self.assertEqual(s["active_chapters"], [])
         self.assertIsNone(s["active_chapter"])
 
+    def test_id_prefix_is_idempotent(self):
+        cat = {"meta": {"name": "strata"}, "open_items": [
+            {"id": "item-0001", "title": "x", "status": "open", "priority": "high", "due": "2026-07-01"},
+            {"id": "strata-2026-002", "title": "y", "status": "open", "priority": "low", "no_deadline": True},
+        ]}
+        ids = [i["id"] for i in osavul.project_slice(cat, Path("/x/strata"), now="t")["items"]]
+        self.assertEqual(ids, ["strata-item-0001", "strata-2026-002"])  # added once, not doubled
+
+    def test_redaction_projection(self):
+        cat = {"meta": {"name": "strata"}, "open_items": [
+            {"id": "strata-1", "title": "Dispute w/ Catriona", "status": "waiting",
+             "priority": "high", "no_deadline": True, "waiting_on": "Catriona/Edward",
+             "redact": True, "tags": ["needs-date"]},
+            {"id": "strata-2", "title": "Real title", "slice_title": "Roof matter",
+             "status": "open", "priority": "normal", "due": "2026-07-01"},
+        ]}
+        a, b = osavul.project_slice(cat, Path("/x/strata"), now="t")["items"]
+        self.assertEqual(a["title"], "[redacted]")
+        self.assertEqual(a["waiting_on"], "[party]")
+        self.assertEqual(a["tags"], ["needs-date"])   # functional tags preserved
+        self.assertEqual(b["title"], "Roof matter")   # slice_title wins
+        self.assertIsNone(b["waiting_on"])            # not redacted
+
+    def test_validate_redact_and_slice_title_types(self):
+        base = dict(GOOD[0])
+        self.assertTrue(osavul.validate_open_items([dict(base, redact="true")]))   # str, not bool
+        self.assertTrue(osavul.validate_open_items([dict(base, slice_title="")]))  # empty
+        self.assertEqual(osavul.validate_open_items([dict(base, redact=True, slice_title="ok")]), [])
+
     def test_publish_writes_valid_slice(self):
         with tempfile.TemporaryDirectory() as tmp:
             wd = _teka(tmp, GOOD)
