@@ -98,6 +98,10 @@ def validate_open_items(items, processing_log=()) -> list:
             errors.append(f"{where}: status {it.get('status')!r} requires 'waiting_on'")
         if "tags" in it and not isinstance(it["tags"], list):
             errors.append(f"{where}: 'tags' must be a list")
+        if "redact" in it and not isinstance(it["redact"], bool):
+            errors.append(f"{where}: 'redact' must be true/false")
+        if "slice_title" in it and not (isinstance(it["slice_title"], str) and it["slice_title"]):
+            errors.append(f"{where}: 'slice_title' must be a non-empty string")
     return errors
 
 
@@ -122,21 +126,40 @@ def project_slice(catalog: dict, teka_dir: Path, *, now: Optional[str] = None) -
     active_chapter = meta.get("active_chapter")
     if active_chapter is None and len(chapters) == 1:
         active_chapter = chapters[0]
+    teka = teka_name(catalog, teka_dir)
     items = []
     for it in catalog.get("open_items", []):
+        # Teka-prefix the slice id so it is globally unique in Osavul's merged
+        # view — idempotently, so already-prefixed catalog ids aren't doubled.
+        raw_id = it.get("id")
+        if raw_id and not str(raw_id).startswith(f"{teka}-"):
+            slice_id = f"{teka}-{raw_id}"
+        else:
+            slice_id = raw_id
+        # Redact at the slice boundary: the catalog keeps the natural full title;
+        # slice_title (explicit) wins, else redact:true emits generic placeholders.
+        # redact also covers waiting_on (free-text party names); tags pass through
+        # unchanged so Osavul can still key on functional tags (e.g. needs-date).
+        redacted = it.get("redact") is True
+        if it.get("slice_title"):
+            title = it["slice_title"]
+        elif redacted:
+            title = "[redacted]"
+        else:
+            title = it.get("title")
         items.append({
-            "id": it.get("id"),
-            "title": it.get("title"),
+            "id": slice_id,
+            "title": title,
             "status": it.get("status"),
             "priority": it.get("priority"),
             "due": it.get("due"),
             "no_deadline": bool(it.get("no_deadline", False)),
             "tags": it.get("tags", []),
-            "waiting_on": it.get("waiting_on"),
+            "waiting_on": "[party]" if redacted else it.get("waiting_on"),
             "link": it.get("link"),
         })
     return {
-        "teka": teka_name(catalog, teka_dir),
+        "teka": teka,
         "lifecycle": meta.get("lifecycle"),
         "active_chapter": active_chapter,
         "active_chapters": chapters,
