@@ -140,7 +140,7 @@ current balance is *current truth* — keep it in `DASHBOARD.md`, not derived ad
         summary="finite episodes inside an ongoing teka (e.g. tenancies)",
         dirs=["chapters", "chapters/_past"],
         repo_rows=[
-            ("chapters/", "One subfolder per {{CHAPTER_NOUN}}; exactly one is active."),
+            ("chapters/", "One subfolder per {{CHAPTER_NOUN}}; one or more may be active (tracked in catalog `meta.active_chapters`)."),
             ("chapters/_past/", "Closed {{CHAPTER_NOUN}}s, retained as record (deposit disputes, references)."),
         ],
         claude_section="""\
@@ -148,10 +148,12 @@ current balance is *current truth* — keep it in `DASHBOARD.md`, not derived ad
 
 This teka is *ongoing* but holds *finite* episodes. Each {{CHAPTER_NOUN}} is a
 subfolder under `chapters/` with its own documents, correspondence, and (if used)
-ledger. Exactly one is the **current** {{CHAPTER_NOUN}} — its key facts live in
-DASHBOARD.md as current truth. On close (e.g. move-out): finalise that chapter's
-ledger and records, move it to `chapters/_past/`, and open a fresh one. Archiving
-the *whole* teka is a different, heavier action (`lifeproj archive`).
+ledger. **One or more** {{CHAPTER_NOUN}}s may be active at once — list the active
+ones in catalog `meta.active_chapters` (their key facts live in DASHBOARD.md as
+current truth, and `lifeproj publish` carries them into the agenda slice). On close
+(e.g. move-out): finalise that chapter's ledger and records, move it to
+`chapters/_past/`, and remove it from `meta.active_chapters`. Archiving the *whole*
+teka is a different, heavier action (`lifeproj archive`).
 """,
     ),
     "entities": Module(

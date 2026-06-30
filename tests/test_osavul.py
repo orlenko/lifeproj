@@ -46,6 +46,26 @@ class OsavulTests(unittest.TestCase):
         self.assertEqual(set(item), set(osavul.ITEM_FIELDS))
         self.assertIs(item["no_deadline"], False)
 
+    def test_active_chapters_projection(self):
+        def slice_for(meta):
+            return osavul.project_slice({"meta": {"name": "demo", **meta}},
+                                        Path("/x/demo"), now="t")
+        # single active chapter -> carried in the array AND auto-filled into active_chapter
+        s = slice_for({"active_chapters": ["leak-2026"]})
+        self.assertEqual(s["active_chapters"], ["leak-2026"])
+        self.assertEqual(s["active_chapter"], "leak-2026")
+        # many -> array carries all; active_chapter stays null
+        s = slice_for({"active_chapters": ["str-claim", "leak-2026"]})
+        self.assertEqual(s["active_chapters"], ["str-claim", "leak-2026"])
+        self.assertIsNone(s["active_chapter"])
+        # fallback to meta.current_chapters for tekas mid-migration
+        s = slice_for({"current_chapters": ["leak-2026"]})
+        self.assertEqual(s["active_chapters"], ["leak-2026"])
+        # none -> empty list + null
+        s = slice_for({})
+        self.assertEqual(s["active_chapters"], [])
+        self.assertIsNone(s["active_chapter"])
+
     def test_publish_writes_valid_slice(self):
         with tempfile.TemporaryDirectory() as tmp:
             wd = _teka(tmp, GOOD)

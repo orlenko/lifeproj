@@ -109,6 +109,19 @@ def teka_name(catalog: dict, teka_dir: Path) -> str:
 def project_slice(catalog: dict, teka_dir: Path, *, now: Optional[str] = None) -> dict:
     """Project a teka's catalog into the canonical agenda slice."""
     meta = catalog.get("meta") or {}
+    # Active chapters: meta.active_chapters is canonical (0/1/many), with a
+    # fallback to meta.current_chapters for tekas mid-migration. active_chapter
+    # (string|null) is kept for the single/back-compat case and auto-filled when
+    # exactly one chapter is active.
+    chapters = meta.get("active_chapters")
+    if chapters is None:
+        chapters = meta.get("current_chapters")
+    if isinstance(chapters, str):
+        chapters = [chapters]
+    chapters = [c for c in (chapters or []) if c]
+    active_chapter = meta.get("active_chapter")
+    if active_chapter is None and len(chapters) == 1:
+        active_chapter = chapters[0]
     items = []
     for it in catalog.get("open_items", []):
         items.append({
@@ -125,7 +138,8 @@ def project_slice(catalog: dict, teka_dir: Path, *, now: Optional[str] = None) -
     return {
         "teka": teka_name(catalog, teka_dir),
         "lifecycle": meta.get("lifecycle"),
-        "active_chapter": meta.get("active_chapter"),
+        "active_chapter": active_chapter,
+        "active_chapters": chapters,
         "generated": now or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "items": items,
     }

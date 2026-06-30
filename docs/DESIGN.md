@@ -235,7 +235,8 @@ variation is legitimate; the slice's is not).
 {
   "teka": "cote",
   "lifecycle": "ongoing",               // ongoing | finite
-  "active_chapter": null,               // chapter name, or null
+  "active_chapter": null,               // single active chapter name, or null (back-compat)
+  "active_chapters": [],                // authoritative active-chapter list (0/1/many)
   "generated": "2026-06-30T17:00:00Z",  // ISO8601 UTC; Osavul derives staleness
   "items": [
     {
@@ -256,6 +257,13 @@ variation is legitimate; the slice's is not).
 Rules: `id`, `title`, `status`, `priority` required; `due` XOR `no_deadline:true`
 (nothing silently dateless); `waiting`/`blocked` require `waiting_on`; `done` items
 appear once then drop from the next slice.
+
+`active_chapters[]` is the authoritative active-chapter list (a teka can have 0, 1,
+or many concurrently active chapters). `lifeproj publish` projects it from catalog
+`meta.active_chapters` (falling back to `meta.current_chapters` for tekas mid-
+migration); `active_chapter` (string|null) is retained for the single-chapter case
+and auto-filled when exactly one chapter is active. Osavul reads `active_chapters[]`
+when present and tolerates `active_chapter:null`.
 
 ### The contract (frozen) — return channel (v2): `outbox/<teka>.intake.json`
 
