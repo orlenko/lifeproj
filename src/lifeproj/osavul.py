@@ -181,11 +181,13 @@ def _load_catalog(teka_dir: Path):
         return None
 
 
-def publish(teka_dir: Optional[Path] = None, *, now: Optional[str] = None) -> int:
+def publish(teka_dir: Optional[Path] = None, *, now: Optional[str] = None,
+            quiet: bool = False) -> int:
     """Write this teka's agenda slice to the spool. Returns a process exit code.
 
     No-ops cleanly (exit 0 + a one-line hint) if the spool isn't provisioned, so
-    it is safe to run as the last step of every digest.
+    it is safe to run as the last step of every digest. ``quiet`` suppresses the
+    stdout status lines (used by ``drain --all`` so it owns the output).
     """
     teka_dir = Path(teka_dir) if teka_dir else Path.cwd()
     catalog = _load_catalog(teka_dir)
@@ -203,7 +205,8 @@ def publish(teka_dir: Optional[Path] = None, *, now: Optional[str] = None) -> in
 
     root = spool_root()
     if not root.exists():
-        print(_grant_hint(root))
+        if not quiet:
+            print(_grant_hint(root))
         return 0
 
     slice_obj = project_slice(catalog, teka_dir, now=now)
@@ -217,10 +220,12 @@ def publish(teka_dir: Optional[Path] = None, *, now: Optional[str] = None) -> in
         os.replace(tmp, target)
     except OSError as exc:
         # Spool exists but we can't write — treat as not-granted, don't crash.
-        print(f"{_grant_hint(root)} ({exc})")
+        if not quiet:
+            print(f"{_grant_hint(root)} ({exc})")
         return 0
 
-    print(f"published {len(slice_obj['items'])} open item(s) → {target}")
+    if not quiet:
+        print(f"published {len(slice_obj['items'])} open item(s) → {target}")
     return 0
 
 
@@ -230,38 +235,39 @@ def _atomic_write_json(path: Path, obj) -> None:
     os.replace(tmp, path)
 
 
-def drain(teka_dir: Optional[Path] = None) -> int:
-    """Apply Osavul's outbox ``completions[]`` to this teka's catalog.
+def _drain_teka(teka_dir: Path) -> dict:
+    """Core drain for one teka. Returns a structured result and prints nothing to
+    stdout (errors go to stderr). Shared by :func:`drain` and :func:`drain_all`.
 
     Osavul can't close a spoke's item directly (federation), so when a task is
-    checked off (or deleted) upstream it writes a completion signal to
-    ``outbox/<teka>.intake.json``. On the teka's next digest, drain finds each
-    referenced open_item, moves it to ``processing_log`` (``done``|``dropped``),
-    and ACKs by removing the processed completions. Idempotent: unknown or
-    already-closed ids are skipped. drain does NOT republish — the digest does,
-    and Osavul's roll-up then drops the item.
+    checked off (or deleted) upstream it writes a completion to
+    ``outbox/<teka>.intake.json``. This finds each referenced open_item, moves it
+    to ``processing_log`` (``done``|``dropped``), removes it from ``open_items``,
+    and ACKs the outbox. Idempotent: unknown/already-closed ids are skipped.
 
-    The other outbox payload (``items[]``, routed-capture intake) is still a stub.
+    status: ``ok`` (applied > 0) · ``noop`` (nothing to do) · ``error``.
     """
-    teka_dir = Path(teka_dir) if teka_dir else Path.cwd()
+    res = {"teka": teka_dir.name, "applied": [], "skipped": [],
+           "status": "noop", "error": None}
     catalog = _load_catalog(teka_dir)
     if catalog is None:
-        return 2
+        res["status"], res["error"] = "error", "missing or invalid catalog.json"
+        return res
     name = teka_name(catalog, teka_dir)
+    res["teka"] = name
 
     root = spool_root()
     if not root.exists():
-        print(_grant_hint(root))
-        return 0
+        res["error"] = "spool not provisioned"      # graceful no-op, not a hard error
+        return res
     outbox_file = root / "outbox" / f"{name}.intake.json"
     if not outbox_file.exists():
-        print(f"no outbox slice at {outbox_file}; nothing to drain.")
-        return 0
+        return res                                   # nothing to drain
     try:
         outbox = json.loads(outbox_file.read_text())
     except json.JSONDecodeError as exc:
-        print(f"error: outbox slice is not valid JSON: {exc}", file=sys.stderr)
-        return 1
+        res["status"], res["error"] = "error", f"invalid outbox JSON: {exc}"
+        return res
 
     completions = outbox.get("completions") or []
     open_items = catalog.get("open_items", [])
@@ -307,7 +313,94 @@ def drain(teka_dir: Optional[Path] = None) -> int:
     else:
         _atomic_write_json(outbox_file, outbox)
 
-    print(f"drained {len(applied)} completion(s) into {name}"
-          + (f": {', '.join(applied)}" if applied else "")
-          + (f"; skipped {len(skipped)} (unknown/already-closed)" if skipped else ""))
+    res["applied"], res["skipped"] = applied, skipped
+    res["status"] = "ok" if applied else "noop"
+    return res
+
+
+def drain(teka_dir: Optional[Path] = None) -> int:
+    """Apply Osavul's outbox ``completions[]`` to one teka (CLI single-teka entry).
+
+    Does NOT republish — the digest does, and Osavul's roll-up then drops the item.
+    The other outbox payload (``items[]``, routed-capture intake) is still a stub.
+    """
+    teka_dir = Path(teka_dir) if teka_dir else Path.cwd()
+    res = _drain_teka(teka_dir)
+    if res["status"] == "error":
+        print(f"error: {res['error']} ({res['teka']})", file=sys.stderr)
+        return 1
+    if res["error"] == "spool not provisioned":
+        print(_grant_hint(spool_root()))
+        return 0
+    if res["applied"]:
+        print(f"drained {len(res['applied'])} completion(s) into {res['teka']}: "
+              f"{', '.join(res['applied'])}"
+              + (f"; skipped {len(res['skipped'])} (unknown/already-closed)"
+                 if res["skipped"] else ""))
+    else:
+        print(f"nothing to drain for {res['teka']}"
+              + (f" (skipped {len(res['skipped'])} unknown/already-closed)"
+                 if res["skipped"] else ""))
     return 0
+
+
+def drain_all(config_path: Optional[Path] = None, *, as_json: bool = False) -> int:
+    """Drain + republish every registered teka — the deterministic fleet loop.
+
+    Registry-driven off cmirror's config (the canonical teka registry, DESIGN §5),
+    so new tekas are picked up automatically. Per teka: drain, then republish only
+    if it drained something (a pure no-op skips the republish to avoid slice churn).
+    Resilient — one teka's failure is logged and the fleet continues; exit is
+    non-zero if any teka errored, but all are processed.
+
+    MUST run unsandboxed (the cron host, like cmirror's backup) — it reaches into
+    every teka's folder. Osavul's deterministic loop invokes it; it never runs
+    inside a sandboxed session.
+    """
+    from lifeproj import registry
+    doc = registry.load(config_path)
+    fleet = registry.projects(doc)
+
+    results, rc = [], 0
+    for name, table in fleet.items():
+        entry = {"teka": name, "drained": 0, "skipped": 0,
+                 "republished": False, "status": "noop", "error": None}
+        wd_raw = table.get("working_dir") if hasattr(table, "get") else None
+        if not wd_raw:
+            entry["status"], entry["error"] = "error", "no working_dir in registry"
+            results.append(entry); rc = 1; continue
+        wd = Path(str(wd_raw)).expanduser()
+        try:
+            r = _drain_teka(wd)
+            entry["drained"], entry["skipped"] = len(r["applied"]), len(r["skipped"])
+            if r["status"] == "error":
+                entry["status"], entry["error"] = "error", r["error"]
+                rc = 1
+            elif r["applied"]:
+                if publish(wd, quiet=True) == 0:
+                    entry["status"], entry["republished"] = "ok", True
+                else:
+                    entry["status"], entry["error"] = "error", "republish failed"
+                    rc = 1
+            else:
+                entry["status"] = "noop"
+        except Exception as exc:                    # never abort the fleet on one teka
+            entry["status"], entry["error"] = "error", str(exc)
+            rc = 1
+        results.append(entry)
+
+    if as_json:
+        print(json.dumps(results, indent=2))
+    elif not results:
+        print("no registered tekas")
+    else:
+        for e in results:
+            if e["status"] == "error":
+                print(f"{e['teka']}: error — {e['error']}")
+            elif e["drained"]:
+                print(f"{e['teka']}: drained {e['drained']}"
+                      + (f", skipped {e['skipped']}" if e["skipped"] else "")
+                      + (", republished" if e["republished"] else ""))
+            else:
+                print(f"{e['teka']}: no-op")
+    return rc

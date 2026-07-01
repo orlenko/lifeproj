@@ -8,10 +8,10 @@ from unittest import mock
 from lifeproj import osavul, scaffold
 
 
-def _teka(tmp, open_items):
+def _teka_named(tmp, name, open_items):
     plan = scaffold.build(
-        "demo", Path(tmp) / "demo", Path(tmp) / "gd" / "demo",
-        domain="general", lifecycle="ongoing", summary="A demo teka.",
+        name, Path(tmp) / name, Path(tmp) / "gd" / name,
+        domain="general", lifecycle="ongoing", summary=f"A {name} teka.",
         modules=["osavul"], created="2026-06-30", register=False,
     )
     wd = Path(scaffold.apply(plan)["working_dir"])
@@ -19,6 +19,10 @@ def _teka(tmp, open_items):
     catalog["open_items"] = open_items
     (wd / "catalog.json").write_text(json.dumps(catalog, indent=2))
     return wd
+
+
+def _teka(tmp, open_items):
+    return _teka_named(tmp, "demo", open_items)
 
 
 GOOD = [{"id": "demo-2026-001", "title": "File AGM notice", "status": "open",
@@ -158,6 +162,49 @@ class OsavulTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
                 self.assertEqual(osavul.drain(wd), 0)
             self.assertEqual(len(json.loads((wd / "catalog.json").read_text())["open_items"]), 1)
+
+    def test_drain_all_fleet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a = _teka_named(tmp, "alpha", [{"id": "alpha-1", "title": "A", "status": "open",
+                                            "priority": "high", "due": "2026-07-01"}])
+            b = _teka_named(tmp, "beta", [{"id": "beta-1", "title": "B", "status": "open",
+                                           "priority": "low", "no_deadline": True}])
+            spool = tmp / "spool"
+            (spool / "outbox").mkdir(parents=True)
+            # alpha has a completion; beta has none
+            (spool / "outbox" / "alpha.intake.json").write_text(
+                json.dumps({"completions": [{"id": "alpha-1", "action": "done", "at": "t"}]}))
+            cfg = tmp / "cmirror.toml"
+            cfg.write_text(
+                f'[projects.alpha]\nworking_dir = "{a}"\nencrypted_dir = "{tmp}/gd/alpha"\n'
+                f'[projects.beta]\nworking_dir = "{b}"\nencrypted_dir = "{tmp}/gd/beta"\n')
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                self.assertEqual(osavul.drain_all(cfg), 0)
+            # alpha: drained + republished
+            self.assertEqual(json.loads((a / "catalog.json").read_text())["open_items"], [])
+            self.assertTrue((spool / "inbox" / "alpha.agenda.json").exists())
+            # beta: untouched, NOT republished (pure no-op, no slice churn)
+            self.assertEqual(len(json.loads((b / "catalog.json").read_text())["open_items"]), 1)
+            self.assertFalse((spool / "inbox" / "beta.agenda.json").exists())
+
+    def test_drain_all_resilient_and_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a = _teka_named(tmp, "alpha", [{"id": "alpha-1", "title": "A", "status": "open",
+                                            "priority": "high", "due": "2026-07-01"}])
+            spool = tmp / "spool"
+            (spool / "outbox").mkdir(parents=True)
+            (spool / "outbox" / "alpha.intake.json").write_text(
+                json.dumps({"completions": [{"id": "alpha-1", "action": "done", "at": "t"}]}))
+            cfg = tmp / "cmirror.toml"
+            cfg.write_text(
+                f'[projects.alpha]\nworking_dir = "{a}"\nencrypted_dir = "{tmp}/gd/alpha"\n'
+                f'[projects.ghost]\nworking_dir = "{tmp}/nonexistent"\nencrypted_dir = "x"\n')
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                rc = osavul.drain_all(cfg)          # ghost errors, alpha succeeds
+            self.assertEqual(rc, 1)                  # non-zero because one errored
+            self.assertEqual(json.loads((a / "catalog.json").read_text())["open_items"], [])  # but alpha still processed
 
     def test_publish_writes_valid_slice(self):
         with tempfile.TemporaryDirectory() as tmp:

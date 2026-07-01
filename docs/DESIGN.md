@@ -231,6 +231,15 @@ variation is legitimate; the slice's is not).
   (unknown/already-closed skipped); atomic writes; **no republish** — the digest
   does that, and Osavul's roll-up then drops the item. The `items[]` routed-capture
   channel remains a documented stub.
+- **`lifeproj drain --all`** — the deterministic fleet loop: drain + republish
+  every registered teka (cmirror registry, so new tekas are picked up
+  automatically), one line per teka (`--json` for a structured array). Republishes
+  only tekas that drained something (no-op skips the republish to avoid slice
+  churn). Resilient: one teka's failure is logged and the fleet continues; exit is
+  non-zero if any errored. Runs **unsandboxed** from Osavul's cron — exactly like
+  cmirror's backup, it reaches into every teka's folder, so it is never invoked
+  from inside a sandboxed session. This is what takes the steady-state loop off the
+  LLM: pull → `drain --all` → roll-up, all deterministic CLIs.
 
 ### The contract (frozen) — agenda slice: `inbox/<teka>.agenda.json`
 
