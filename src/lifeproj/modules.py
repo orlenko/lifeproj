@@ -205,8 +205,13 @@ crashes the digest.
 **No cmirror key needed.** The spool is *self-registering*: a teka enters Osavul's
 world the first time it publishes. Do not add a registry entry for this.
 
-*(v2)* `lifeproj drain` will file items Osavul routes back via `outbox/` into this
-teka's `intake/`. It exists as a documented stub today.
+**Drain completions near the start of each digest.** Run `lifeproj drain`: it
+applies completion signals Osavul wrote to `outbox/<teka>.intake.json` — an item
+you checked off or deleted upstream (e.g. Google Tasks) — by moving those
+`open_items[]` to `processing_log[]` (`done`/`dropped`) and ACKing the outbox.
+Reconcile and `lifeproj publish` *after*, so the republished slice reflects the
+closures. Idempotent + a clean no-op if there's no outbox slot. (The `items[]`
+routed-capture channel is still a stub.)
 """,
     ),
 }

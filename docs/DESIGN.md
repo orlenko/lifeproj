@@ -225,9 +225,12 @@ variation is legitimate; the slice's is not).
   `open_items[]`, projects them into the agenda slice, writes
   `inbox/<teka>.agenda.json` atomically (temp + `os.replace`). No-ops cleanly with a
   one-line grant hint if the spool isn't provisioned — safe as the last digest step.
-- **`lifeproj drain`** *(v2 stub — wired later)* — reads `outbox/<teka>.intake.json`,
-  files each routed item into the teka's `intake/`, then clears the slot. Exists and
-  documented now so the downstream specs can build against it.
+- **`lifeproj drain`** — reads `outbox/<teka>.intake.json` and applies Osavul's
+  `completions[]`: for each, moves the matching `open_item` to `processing_log`
+  (`done`/`dropped`) and ACKs by removing the completion. Idempotent
+  (unknown/already-closed skipped); atomic writes; **no republish** — the digest
+  does that, and Osavul's roll-up then drops the item. The `items[]` routed-capture
+  channel remains a documented stub.
 
 ### The contract (frozen) — agenda slice: `inbox/<teka>.agenda.json`
 
@@ -280,19 +283,31 @@ tags); the catalog's internal ids and `link` are untouched.
 {
   "teka": "cote",
   "generated": "2026-06-30T17:00:00Z",
-  "items": [
+  "items": [                                        // routed captures → intake (v2 stub)
     {
       "title": "Call management co about parking",  // required
       "note": "from Todoist capture 2026-06-30",    // optional free text
       "due": "2026-07-10",                           // optional ISO date, or null
       "source": "todoist"                            // optional provenance tag
     }
+  ],
+  "completions": [                                   // close-outs applied by `lifeproj drain`
+    {
+      "id": "cote-012",                              // the teka's published SLICE id
+      "action": "done",                              // done | dropped
+      "at": "2026-06-30T18:00:00Z",                  // ISO8601
+      "source": "google-tasks-via-osavul"            // provenance
+    }
   ]
 }
 ```
 
-Osavul writes it; the teka drains it on its next digest (turning each into a real
-`open_item` with a fresh teka-prefixed `id`), then empties the slot.
+Osavul writes it. **`completions[]`** is live: `lifeproj drain` closes each referenced
+`open_item` on the teka's next digest (see the `drain` bullet above). The completion
+`id` is the published slice id (teka-prefixed); drain resolves it against the raw
+catalog id or its `<teka>-` prefixed form, and Osavul appends completions
+idempotently (never a duplicate id). **`items[]`** (routed captures → `intake/`) is
+still a documented stub, to be wired in v2.
 
 ## 11. Non-goals (deliberately not built)
 

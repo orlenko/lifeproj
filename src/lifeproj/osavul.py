@@ -224,29 +224,90 @@ def publish(teka_dir: Optional[Path] = None, *, now: Optional[str] = None) -> in
     return 0
 
 
-def drain(teka_dir: Optional[Path] = None) -> int:
-    """v2 stub: file items Osavul routed back via ``outbox/`` into ``intake/``.
+def _atomic_write_json(path: Path, obj) -> None:
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(obj, indent=2) + "\n")
+    os.replace(tmp, path)
 
-    Documented and wired as a subcommand now; the filing step lands in v2. This
-    never mutates anything yet.
+
+def drain(teka_dir: Optional[Path] = None) -> int:
+    """Apply Osavul's outbox ``completions[]`` to this teka's catalog.
+
+    Osavul can't close a spoke's item directly (federation), so when a task is
+    checked off (or deleted) upstream it writes a completion signal to
+    ``outbox/<teka>.intake.json``. On the teka's next digest, drain finds each
+    referenced open_item, moves it to ``processing_log`` (``done``|``dropped``),
+    and ACKs by removing the processed completions. Idempotent: unknown or
+    already-closed ids are skipped. drain does NOT republish — the digest does,
+    and Osavul's roll-up then drops the item.
+
+    The other outbox payload (``items[]``, routed-capture intake) is still a stub.
     """
     teka_dir = Path(teka_dir) if teka_dir else Path.cwd()
     catalog = _load_catalog(teka_dir)
     if catalog is None:
         return 2
     name = teka_name(catalog, teka_dir)
-    outbox_file = spool_root() / "outbox" / f"{name}.intake.json"
 
-    print("`lifeproj drain` is a documented v2 stub — the filing step is not wired yet.")
-    if outbox_file.exists():
-        try:
-            data = json.loads(outbox_file.read_text())
-            n = len(data.get("items", []))
-        except (json.JSONDecodeError, OSError):
-            n = "?"
-        print(f"would file {n} routed item(s) from {outbox_file} into {teka_dir}/intake/, "
-              "then clear the outbox slot.")
-    else:
+    root = spool_root()
+    if not root.exists():
+        print(_grant_hint(root))
+        return 0
+    outbox_file = root / "outbox" / f"{name}.intake.json"
+    if not outbox_file.exists():
         print(f"no outbox slice at {outbox_file}; nothing to drain.")
-    print("Contract: see lifeproj docs/DESIGN.md → 'Osavul integration' (outbox schema).")
+        return 0
+    try:
+        outbox = json.loads(outbox_file.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"error: outbox slice is not valid JSON: {exc}", file=sys.stderr)
+        return 1
+
+    completions = outbox.get("completions") or []
+    open_items = catalog.get("open_items", [])
+    log = catalog.setdefault("processing_log", [])
+    # A completion id is a published SLICE id (teka-prefixed since 0.4.2); resolve
+    # it to a catalog item by the raw id OR its <teka>- prefixed form.
+    by_id = {}
+    for it in open_items:
+        iid = it.get("id")
+        if iid:
+            by_id.setdefault(iid, it)
+            by_id.setdefault(f"{name}-{iid}", it)
+
+    applied, skipped, done_cids = [], [], set()
+    for c in completions:
+        cid = c.get("id")
+        action = c.get("action")
+        item = by_id.get(cid)
+        if not cid or action not in ("done", "dropped") or item is None or item not in open_items:
+            skipped.append(cid)          # malformed / unknown / already-closed → skip
+            continue
+        open_items.remove(item)
+        log.append({
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "action": action,
+            "closed_at": c.get("at"),
+            "source": c.get("source", "osavul"),
+            "via": "lifeproj drain",
+        })
+        applied.append(cid)
+        done_cids.add(cid)
+
+    # Write closures FIRST — if this fails, completions stay in the outbox to
+    # retry (never lost); the applied items are already gone from open_items so a
+    # retry re-skips them (idempotent).
+    if applied:
+        _atomic_write_json(teka_dir / "catalog.json", catalog)
+    # ACK: drop applied completions; keep unprocessed ones + items[].
+    outbox["completions"] = [c for c in completions if c.get("id") not in done_cids]
+    if not outbox["completions"] and not outbox.get("items"):
+        outbox_file.unlink()
+    else:
+        _atomic_write_json(outbox_file, outbox)
+
+    print(f"drained {len(applied)} completion(s) into {name}"
+          + (f": {', '.join(applied)}" if applied else "")
+          + (f"; skipped {len(skipped)} (unknown/already-closed)" if skipped else ""))
     return 0
