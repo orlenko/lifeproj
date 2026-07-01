@@ -236,7 +236,11 @@ variation is legitimate; the slice's is not).
   automatically), one line per teka (`--json` for a structured array). Republishes
   only tekas that drained something (no-op skips the republish to avoid slice
   churn). Resilient: one teka's failure is logged and the fleet continues; exit is
-  non-zero if any errored. Runs **unsandboxed** from Osavul's cron — exactly like
+  non-zero if any errored. A registered dir with **no `catalog.json`** (an
+  un-migrated/bare teka still being brought onto the standard) is a graceful
+  **skip** (`status: skipped`), not an error — so the fleet stays green while
+  migrations are in flight; `error` is reserved for a dir that *has* a
+  `catalog.json` but fails to drain/publish. Runs **unsandboxed** from Osavul's cron — exactly like
   cmirror's backup, it reaches into every teka's folder, so it is never invoked
   from inside a sandboxed session. This is what takes the steady-state loop off the
   LLM: pull → `drain --all` → roll-up, all deterministic CLIs.

@@ -1,7 +1,9 @@
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -188,23 +190,51 @@ class OsavulTests(unittest.TestCase):
             self.assertEqual(len(json.loads((b / "catalog.json").read_text())["open_items"]), 1)
             self.assertFalse((spool / "inbox" / "beta.agenda.json").exists())
 
-    def test_drain_all_resilient_and_json(self):
+    def _drain_all_json(self, cfg, spool):
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}), redirect_stdout(buf):
+            rc = osavul.drain_all(cfg, as_json=True)
+        return rc, {r["teka"]: r for r in json.loads(buf.getvalue())}
+
+    def _alpha_plus(self, tmp, extra_toml, extra_setup=lambda tmp: None):
+        a = _teka_named(tmp, "alpha", [{"id": "alpha-1", "title": "A", "status": "open",
+                                        "priority": "high", "due": "2026-07-01"}])
+        spool = tmp / "spool"
+        (spool / "outbox").mkdir(parents=True)
+        (spool / "outbox" / "alpha.intake.json").write_text(
+            json.dumps({"completions": [{"id": "alpha-1", "action": "done", "at": "t"}]}))
+        extra_setup(tmp)
+        cfg = tmp / "cmirror.toml"
+        cfg.write_text(f'[projects.alpha]\nworking_dir = "{a}"\nencrypted_dir = "x"\n' + extra_toml)
+        return a, spool, cfg
+
+    def test_drain_all_skips_unmigrated(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            a = _teka_named(tmp, "alpha", [{"id": "alpha-1", "title": "A", "status": "open",
-                                            "priority": "high", "due": "2026-07-01"}])
-            spool = tmp / "spool"
-            (spool / "outbox").mkdir(parents=True)
-            (spool / "outbox" / "alpha.intake.json").write_text(
-                json.dumps({"completions": [{"id": "alpha-1", "action": "done", "at": "t"}]}))
-            cfg = tmp / "cmirror.toml"
-            cfg.write_text(
-                f'[projects.alpha]\nworking_dir = "{a}"\nencrypted_dir = "{tmp}/gd/alpha"\n'
-                f'[projects.ghost]\nworking_dir = "{tmp}/nonexistent"\nencrypted_dir = "x"\n')
-            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
-                rc = osavul.drain_all(cfg)          # ghost errors, alpha succeeds
-            self.assertEqual(rc, 1)                  # non-zero because one errored
-            self.assertEqual(json.loads((a / "catalog.json").read_text())["open_items"], [])  # but alpha still processed
+            a, spool, cfg = self._alpha_plus(
+                tmp,
+                f'[projects.maryanne]\nworking_dir = "{tmp}/maryanne"\nencrypted_dir = "x"\n',
+                lambda tmp: (tmp / "maryanne").mkdir())  # registered, but no catalog.json
+            rc, by = self._drain_all_json(cfg, spool)
+            self.assertEqual(rc, 0)                       # a bare/un-migrated dir is a SKIP
+            self.assertEqual(by["maryanne"]["status"], "skipped")
+            self.assertIsNone(by["maryanne"]["error"])
+            self.assertEqual(by["alpha"]["status"], "ok")
+            self.assertEqual(json.loads((a / "catalog.json").read_text())["open_items"], [])
+
+    def test_drain_all_errors_on_broken_catalog(self):
+        def setup(tmp):
+            (tmp / "broken").mkdir()
+            (tmp / "broken" / "catalog.json").write_text("{ not json")  # HAS a catalog, but broken
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            a, spool, cfg = self._alpha_plus(
+                tmp, f'[projects.broken]\nworking_dir = "{tmp}/broken"\nencrypted_dir = "x"\n', setup)
+            rc, by = self._drain_all_json(cfg, spool)
+            self.assertEqual(rc, 1)                       # a broken catalog IS an error
+            self.assertEqual(by["broken"]["status"], "error")
+            self.assertEqual(by["alpha"]["status"], "ok")  # fleet continued past the error
+            self.assertEqual(json.loads((a / "catalog.json").read_text())["open_items"], [])
 
     def test_publish_writes_valid_slice(self):
         with tempfile.TemporaryDirectory() as tmp:
