@@ -95,6 +95,70 @@ class OsavulTests(unittest.TestCase):
         self.assertTrue(osavul.validate_open_items([dict(base, slice_title="")]))  # empty
         self.assertEqual(osavul.validate_open_items([dict(base, redact=True, slice_title="ok")]), [])
 
+    def _outbox(self, spool, teka, payload):
+        d = spool / "outbox"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{teka}.intake.json").write_text(json.dumps(payload))
+
+    def test_drain_applies_done_and_dropped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = _teka(tmp, [
+                {"id": "demo-1", "title": "A", "status": "open", "priority": "high", "due": "2026-07-01"},
+                {"id": "demo-2", "title": "B", "status": "open", "priority": "low", "no_deadline": True},
+                {"id": "demo-3", "title": "C", "status": "open", "priority": "normal", "no_deadline": True},
+            ])
+            spool = Path(tmp) / "spool"
+            self._outbox(spool, "demo", {"teka": "demo", "completions": [
+                {"id": "demo-1", "action": "done", "at": "2026-07-01T00:00:00Z", "source": "google-tasks-via-osavul"},
+                {"id": "demo-2", "action": "dropped", "at": "2026-07-01T00:00:00Z"},
+            ]})
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                self.assertEqual(osavul.drain(wd), 0)
+            cat = json.loads((wd / "catalog.json").read_text())
+            self.assertEqual([i["id"] for i in cat["open_items"]], ["demo-3"])
+            self.assertEqual({e["id"]: e["action"] for e in cat["processing_log"]},
+                             {"demo-1": "done", "demo-2": "dropped"})
+            self.assertFalse((spool / "outbox" / "demo.intake.json").exists())  # fully consumed
+
+    def test_drain_resolves_prefixed_slice_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = _teka(tmp, [{"id": "item-0001", "title": "A", "status": "open",
+                              "priority": "high", "due": "2026-07-01"}])
+            spool = Path(tmp) / "spool"
+            self._outbox(spool, "demo", {"completions": [
+                {"id": "demo-item-0001", "action": "done", "at": "t"}]})  # teka-prefixed slice id
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                self.assertEqual(osavul.drain(wd), 0)
+            cat = json.loads((wd / "catalog.json").read_text())
+            self.assertEqual(cat["open_items"], [])
+            self.assertEqual(cat["processing_log"][-1]["id"], "item-0001")
+
+    def test_drain_idempotent_and_preserves_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = _teka(tmp, [{"id": "demo-1", "title": "A", "status": "open",
+                              "priority": "high", "due": "2026-07-01"}])
+            spool = Path(tmp) / "spool"
+            self._outbox(spool, "demo", {"items": [{"title": "routed"}], "completions": [
+                {"id": "demo-1", "action": "done", "at": "t"},
+                {"id": "demo-unknown", "action": "done", "at": "t"}]})
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                self.assertEqual(osavul.drain(wd), 0)
+                self.assertEqual(osavul.drain(wd), 0)  # re-run: nothing new, no double-apply
+            cat = json.loads((wd / "catalog.json").read_text())
+            self.assertEqual(cat["open_items"], [])
+            ob = json.loads((spool / "outbox" / "demo.intake.json").read_text())
+            self.assertEqual(ob["items"], [{"title": "routed"}])                 # items[] preserved
+            self.assertEqual([c["id"] for c in ob["completions"]], ["demo-unknown"])  # applied gone, unknown lingers
+
+    def test_drain_no_outbox_is_noop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = _teka(tmp, GOOD)
+            spool = Path(tmp) / "spool"
+            spool.mkdir()
+            with mock.patch.dict(os.environ, {"OSAVUL_SPOOL": str(spool)}):
+                self.assertEqual(osavul.drain(wd), 0)
+            self.assertEqual(len(json.loads((wd / "catalog.json").read_text())["open_items"]), 1)
+
     def test_publish_writes_valid_slice(self):
         with tempfile.TemporaryDirectory() as tmp:
             wd = _teka(tmp, GOOD)
