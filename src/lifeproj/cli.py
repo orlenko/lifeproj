@@ -127,6 +127,9 @@ def cmd_publish(args) -> int:
 
 
 def cmd_drain(args) -> int:
+    if getattr(args, "all", False):
+        config = Path(args.config).expanduser() if args.config else None
+        return osavul.drain_all(config, as_json=args.json)
     return osavul.drain(Path(args.path).expanduser() if args.path else None)
 
 
@@ -174,8 +177,12 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("--path", help="teka dir (default: current directory)")
     pub.set_defaults(func=cmd_publish)
 
-    dr = sub.add_parser("drain", help="(v2 stub) file items Osavul routed back into this teka's intake")
+    dr = sub.add_parser("drain", help="apply Osavul completion signals to a teka (or --all registered tekas)")
     dr.add_argument("--path", help="teka dir (default: current directory)")
+    dr.add_argument("--all", action="store_true",
+                    help="drain + republish every registered teka (registry-driven; run unsandboxed, e.g. from cron)")
+    dr.add_argument("--json", action="store_true", help="with --all: emit a structured JSON array")
+    dr.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
     dr.set_defaults(func=cmd_drain)
     return p
 
