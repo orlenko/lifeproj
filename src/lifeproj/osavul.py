@@ -249,9 +249,17 @@ def _drain_teka(teka_dir: Path) -> dict:
     """
     res = {"teka": teka_dir.name, "applied": [], "skipped": [],
            "status": "noop", "error": None}
-    catalog = _load_catalog(teka_dir)
-    if catalog is None:
-        res["status"], res["error"] = "error", "missing or invalid catalog.json"
+    catalog_path = teka_dir / "catalog.json"
+    if not catalog_path.exists():
+        # Registered in cmirror but not a lifeproj teka yet (bare/un-migrated dir).
+        # That's not a failure — skip it so it never bumps the fleet exit code.
+        res["status"] = "skipped"
+        return res
+    try:
+        catalog = json.loads(catalog_path.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        # Has a catalog.json but it's broken — that IS an error.
+        res["status"], res["error"] = "error", f"invalid catalog.json: {exc}"
         return res
     name = teka_name(catalog, teka_dir)
     res["teka"] = name
@@ -329,6 +337,9 @@ def drain(teka_dir: Optional[Path] = None) -> int:
     if res["status"] == "error":
         print(f"error: {res['error']} ({res['teka']})", file=sys.stderr)
         return 1
+    if res["status"] == "skipped":
+        print(f"{res['teka']}: not a lifeproj teka (no catalog.json); nothing to drain.")
+        return 0
     if res["error"] == "spool not provisioned":
         print(_grant_hint(spool_root()))
         return 0
@@ -376,6 +387,8 @@ def drain_all(config_path: Optional[Path] = None, *, as_json: bool = False) -> i
             if r["status"] == "error":
                 entry["status"], entry["error"] = "error", r["error"]
                 rc = 1
+            elif r["status"] == "skipped":
+                entry["status"] = "skipped"   # un-migrated/bare dir — not an error
             elif r["applied"]:
                 if publish(wd, quiet=True) == 0:
                     entry["status"], entry["republished"] = "ok", True
@@ -397,6 +410,8 @@ def drain_all(config_path: Optional[Path] = None, *, as_json: bool = False) -> i
         for e in results:
             if e["status"] == "error":
                 print(f"{e['teka']}: error — {e['error']}")
+            elif e["status"] == "skipped":
+                print(f"{e['teka']}: skipped (not a lifeproj teka)")
             elif e["drained"]:
                 print(f"{e['teka']}: drained {e['drained']}"
                       + (f", skipped {e['skipped']}" if e["skipped"] else "")
