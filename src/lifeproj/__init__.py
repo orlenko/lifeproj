@@ -9,4 +9,4 @@ archive, restore, and a read-only overview.
 See docs/DESIGN.md for the full model.
 """
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
