@@ -7,6 +7,8 @@ stays in Drive; set ``gd-sync/<name>`` to Drive "online-only" afterwards to free
 the local ciphertext too.
 
 restore: move it back to ``[projects.*]`` and pull the working copy from Drive.
+Idempotent — safe to re-run after a failed pull — and it recreates the working
+dir first (``cmirror pull`` requires it; ``--purge-local`` deleted it).
 """
 
 from __future__ import annotations
@@ -88,15 +90,30 @@ def archive(name: str, *, purge_local: bool = False, yes: bool = False,
 
 def restore(name: str, *, config_path: Optional[Path] = None) -> dict:
     doc = registry.load(config_path)
-    section, _ = registry.find(doc, name)
+    section, table = registry.find(doc, name)
     if section is None:
         raise ArchiveError(f"teka {name!r} is not registered.")
-    if section == registry.ACTIVE:
-        raise ArchiveError(f"teka {name!r} is already active.")
 
-    print(f"Restoring {name!r}: move to [projects.*]")
-    registry.restore(doc, name)
-    registry.save(doc, config_path)
+    if section == registry.ARCHIVED:
+        print(f"Restoring {name!r}: move to [projects.*]")
+        registry.restore(doc, name)
+        registry.save(doc, config_path)
+    else:
+        # Already active. cmirror only reads [projects.*], so restore must
+        # flip the entry active *before* it can pull — which means a pull that
+        # fails (e.g. a purged working_dir) leaves the teka active-but-empty and
+        # a naive re-run would hard-error. Make restore idempotent instead:
+        # re-entry just retries the pull.
+        print(f"Teka {name!r} already active; re-pulling working copy.")
+
+    raw_wd = str(table.get("working_dir", "")).strip()
+    if not raw_wd:
+        raise ArchiveError(f"teka {name!r} has no working_dir in the registry.")
+    working_dir = Path(raw_wd).expanduser()
+    # cmirror pull refuses to run unless working_dir exists, and
+    # `archive --purge-local` deletes it — so recreate it here or the
+    # purge → restore round-trip can never complete.
+    working_dir.mkdir(parents=True, exist_ok=True)
 
     cmirror = _cmirror()
     print("Pull working copy from Drive")
