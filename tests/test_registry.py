@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 import tomlkit
 
@@ -28,6 +30,19 @@ class RegistryTests(unittest.TestCase):
         doc = self.doc()
         self.assertEqual(set(registry.projects(doc)), {"strata", "tax-2025"})
         self.assertEqual(registry.archived(doc), {})
+
+    def test_load_missing_config_returns_new_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = registry.load(Path(tmp) / "missing.toml")
+            self.assertEqual(registry.projects(doc), {})
+
+    def test_load_does_not_hide_permission_errors(self):
+        class UnreadablePath:
+            def read_text(self):
+                raise PermissionError("denied")
+
+        with self.assertRaises(PermissionError):
+            registry.load(UnreadablePath())
 
     def test_add(self):
         doc = self.doc()

@@ -87,12 +87,12 @@ def cmd_new(args) -> int:
     for note in result["notes"]:
         print(f"  note: {note}")
     print("\nNext:")
-    print(f"  1. Edit {working_dir}/CLAUDE.md (the operating manual) and README.md.")
+    print(f"  1. Edit {working_dir}/CLAUDE.md (the shared operating manual) and README.md.")
     if plan.imap_folder:
         print(f"  2. Create the IMAP label {plan.imap_folder!r}, then: "
               f"cd {working_dir}/scripts/mail && imap-extract --once")
     print(f"  3. First backup: cmirror backup --project {name}")
-    print(f"  4. Open {working_dir} in Claude Code and run the digest ritual.")
+    print(f"  4. Open {working_dir} in Codex or Claude Code and run the digest ritual.")
     return 0
 
 
@@ -155,7 +155,7 @@ def cmd_drain(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="lifeproj", description="Orchestrate tekas (local, encrypted, Claude-maintained life-admin projects).")
+    p = argparse.ArgumentParser(prog="lifeproj", description="Orchestrate local, agent-maintained tekas with encrypted backups.")
     p.add_argument("--version", action="version", version=f"lifeproj {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -198,12 +198,12 @@ def build_parser() -> argparse.ArgumentParser:
     pub.add_argument("--path", help="teka dir (default: current directory)")
     pub.set_defaults(func=cmd_publish)
 
-    eq = sub.add_parser("equip", help="sync spine skills (humanize) into existing tekas")
+    eq = sub.add_parser("equip", help="sync Codex/Claude spine assets into existing tekas")
     eq.add_argument("name", nargs="*",
                     help="registered teka name(s); default: every registered teka")
     eq.add_argument("--path", help="equip one teka by directory instead of by name")
     eq.add_argument("--force", action="store_true",
-                    help="overwrite a skill file the teka has customized")
+                    help="overwrite customized skill copies (never living instruction files)")
     eq.add_argument("--dry-run", action="store_true", help="report actions, write nothing")
     eq.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
     eq.set_defaults(func=cmd_equip)
