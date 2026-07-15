@@ -26,16 +26,33 @@ class EquipTests(unittest.TestCase):
                 if ".claude/skills" not in line) + "\n")
         return wd
 
-    def test_installs_missing_skill_and_hints_claude(self):
+    def test_installs_missing_skill_and_adds_claude_rule(self):
         with tempfile.TemporaryDirectory() as tmp:
             wd = self._teka(tmp)
             entry = equip.equip_teka(wd)
-            self.assertEqual(entry["actions"], [(SKILL_REL, "installed")])
+            self.assertEqual(entry["actions"][0], (SKILL_REL, "installed"))
             self.assertTrue((wd / SKILL_REL).exists())
-            self.assertTrue(entry["claude_hint"])
-            # Second run is a no-op.
+            # The drafting rule lands inside the working-rules section.
+            self.assertFalse(entry["claude_hint"])
+            self.assertEqual(entry["actions"][1][0], "CLAUDE.md")
+            claude = (wd / "CLAUDE.md").read_text()
+            rules_at = claude.index("## Working rules")
+            bullet_at = claude.index(".claude/skills/humanize")
+            next_section_at = claude.index("## Open items")
+            self.assertTrue(rules_at < bullet_at < next_section_at)
+            # Second run is a full no-op.
             entry = equip.equip_teka(wd)
             self.assertEqual(entry["actions"], [(SKILL_REL, "current")])
+            self.assertEqual(claude, (wd / "CLAUDE.md").read_text())
+
+    def test_customized_claude_without_anchor_gets_hint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp)
+            before = "# my own manual\n\nNo standard sections here.\n"
+            (wd / "CLAUDE.md").write_text(before)
+            entry = equip.equip_teka(wd)
+            self.assertTrue(entry["claude_hint"])
+            self.assertEqual((wd / "CLAUDE.md").read_text(), before)
 
     def test_customized_skill_kept_unless_forced(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,9 +70,12 @@ class EquipTests(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             wd = self._teka(tmp)
+            before = (wd / "CLAUDE.md").read_text()
             entry = equip.equip_teka(wd, dry_run=True)
-            self.assertEqual(entry["actions"], [(SKILL_REL, "installed")])
+            self.assertEqual(entry["actions"][0], (SKILL_REL, "installed"))
+            self.assertEqual(entry["actions"][1][0], "CLAUDE.md")
             self.assertFalse((wd / SKILL_REL).exists())
+            self.assertEqual((wd / "CLAUDE.md").read_text(), before)
 
     def test_skips_non_teka_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -7,9 +7,12 @@ one teka's failure is logged and the fleet continues.
 
 A teka may have deliberately customized its copy of a skill, so an existing
 file that differs from the packaged version is *kept* by default and reported;
-``--force`` overwrites it. `CLAUDE.md` is a living document that this never
-edits — if it doesn't mention the skill, the suggested working-rule bullet is
-printed for a human (or the teka's own session) to paste.
+``--force`` overwrites it. `CLAUDE.md` is a living document, so it gets the
+lightest possible touch: when its manual still carries the standard
+"## Working rules" section and doesn't mention the skill, the working-rule
+bullet is appended to that section; a manual customized beyond that anchor is
+left alone and the bullet is printed for a human (or the teka's own session)
+to paste.
 """
 
 from __future__ import annotations
@@ -29,6 +32,25 @@ CLAUDE_RULE_HINT = """\
   with the `humanize` skill (`.claude/skills/humanize/`): no AI tells — em-dash
   tics, "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own
   voice from prior outgoing mail in `correspondence/` where it exists."""
+
+
+def _add_claude_rule(claude: Path, *, dry_run: bool) -> Optional[str]:
+    """Append the drafting rule to CLAUDE.md's working-rules section. Returns
+    the action taken, or None when the standard heading is gone and the bullet
+    must be pasted by hand."""
+    lines = claude.read_text().splitlines()
+    start = next((i for i, line in enumerate(lines)
+                  if line.startswith("## Working rules")), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    lines[end:end] = CLAUDE_RULE_HINT.splitlines()
+    if not dry_run:
+        claude.write_text("\n".join(lines) + "\n")
+    return "drafting rule added to working rules"
 
 
 def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
@@ -62,7 +84,11 @@ def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
 
     claude = wd / "CLAUDE.md"
     if claude.exists() and ".claude/skills/humanize" not in claude.read_text():
-        entry["claude_hint"] = True
+        action = _add_claude_rule(claude, dry_run=dry_run)
+        if action:
+            entry["actions"].append(("CLAUDE.md", action))
+        else:
+            entry["claude_hint"] = True
     return entry
 
 
@@ -99,7 +125,7 @@ def equip_all(config_path: Optional[Path] = None, *, names: Optional[list] = Non
             hint_needed.append(name)
 
     if hint_needed:
-        print(f"\nCLAUDE.md in {', '.join(hint_needed)} doesn't mention the skill yet."
-              " Suggested working-rules bullet (paste it there):\n")
+        print(f"\nCLAUDE.md in {', '.join(hint_needed)} has no standard working-rules"
+              " section to extend. Paste this bullet where it fits:\n")
         print(CLAUDE_RULE_HINT)
     return rc

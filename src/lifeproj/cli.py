@@ -139,8 +139,8 @@ def cmd_equip(args) -> int:
         for rel, act in entry["actions"]:
             print(f"{prefix}{rel}: {act}")
         if entry["claude_hint"]:
-            print("\nCLAUDE.md doesn't mention the skill yet. Suggested"
-                  " working-rules bullet (paste it there):\n")
+            print("\nCLAUDE.md has no standard working-rules section to extend."
+                  " Paste this bullet where it fits:\n")
             print(equip.CLAUDE_RULE_HINT)
         return 0
     return equip.equip_all(config, names=args.name or None,
