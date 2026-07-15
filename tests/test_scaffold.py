@@ -35,6 +35,22 @@ class ScaffoldTests(unittest.TestCase):
             for bucket in ("Overdue", "Due soon", "No deadline"):
                 self.assertIn(bucket, dash)
 
+    def test_spine_ships_humanize_skill(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan = self._build(tmp, [])
+            res = scaffold.apply(plan)
+            wd = Path(res["working_dir"])
+            skill = wd / ".claude" / "skills" / "humanize" / "SKILL.md"
+            self.assertTrue(skill.exists())
+            body = skill.read_text()
+            self.assertIn("name: humanize", body)
+            # Copied verbatim — no unrendered tokens, attribution intact.
+            self.assertNotIn("{{", body)
+            self.assertIn("blader/humanizer", body)
+            # CLAUDE.md binds drafting to the skill.
+            claude = (wd / "CLAUDE.md").read_text()
+            self.assertIn(".claude/skills/humanize/", claude)
+
     def test_email_module_renders_env_and_correspondence(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = self._build(tmp, ["email-intake"], imap_folder="Labels/Demo")

@@ -9,11 +9,22 @@ hidden template engine.
 
 from __future__ import annotations
 
+from importlib import resources
+
 
 def render(text: str, **tokens: str) -> str:
     for key, value in tokens.items():
         text = text.replace("{{" + key + "}}", str(value))
     return text
+
+
+def data(relpath: str) -> str:
+    """Read a packaged data file (``src/lifeproj/data/``), copied verbatim into
+    tekas — no ``{{TOKEN}}`` rendering, so bodies may contain anything."""
+    node = resources.files("lifeproj").joinpath("data")
+    for part in relpath.split("/"):
+        node = node.joinpath(part)
+    return node.read_text()
 
 
 CLAUDE_HEADER = """\
@@ -46,6 +57,10 @@ CLAUDE_HEADER = """\
 - **Monitors flag, humans act.** Intake/watchers only surface new material. Never
   send a message, sign, pay, or commit anything outbound without Vlad's explicit
   approval. Drafts wait in place for review.
+- **Drafts sound human.** Write every outgoing draft (email, letter, document)
+  with the `humanize` skill (`.claude/skills/humanize/`): no AI tells — em-dash
+  tics, "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own
+  voice from prior outgoing mail in `correspondence/` where it exists.
 - **Privacy posture.** Everything stays local. The only thing that leaves this
   machine is the *encrypted* cmirror backup. Do not paste teka contents into web
   tools or external services.
@@ -83,6 +98,7 @@ CLAUDE_FOOTER = """\
 | `DASHBOARD.md` | At-a-glance current truth, regenerated from `catalog.json`. |
 | `catalog.json` | Structured single source of truth (documents / open items / log). |
 | `catalog_check.py` | Validator for `catalog.json`. |
+| `.claude/skills/` | Skills every teka carries (`humanize` — outgoing drafts avoid AI tells). |
 | `intake/` | Transient dropzone — drained after filing (presence == unprocessed). |
 {{REPO_MAP_ROWS}}
 

@@ -54,9 +54,16 @@ README.md          human "start here"
 DASHBOARD.md       current truth, regenerated from catalog.json
 catalog.json       structured single source of truth
 catalog_check.py   validator (copied in — thick teka, thin centre)
+.claude/skills/    spine skills, copied in (humanize: drafts avoid AI tells)
 intake/            transient dropzone, drained after filing
 scripts/           bespoke per-teka automation
 ```
+
+The `humanize` skill (adapted from [blader/humanizer](https://github.com/blader/humanizer),
+MIT) rides in every teka because every teka drafts outgoing text — emails,
+letters, filings — and none of it should read as AI-generated. `CLAUDE.md`'s
+working rules bind drafting to it, and it voice-matches Vlad's prior outgoing
+mail in `correspondence/` when the teka has any.
 
 Everything else is an **opt-in module** (`email-intake`, `docs-intake`,
 `github-source`, `timeline`, `ledger`, `chapters`, `entities`). Modules compose;
