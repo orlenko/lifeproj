@@ -65,8 +65,10 @@ letters, filings — and none of it should read as AI-generated. `CLAUDE.md`'s
 working rules bind drafting to it, and it voice-matches Vlad's prior outgoing
 mail in `correspondence/` when the teka has any. Tekas stamped before a spine
 skill existed are retrofitted with `lifeproj equip` (registry-driven like
-`drain --all`; keeps a teka's customized copy unless `--force`, and never edits
-a living `CLAUDE.md` — it prints the working-rules bullet to paste instead).
+`drain --all`; keeps a teka's customized copy unless `--force`). It gives a
+living `CLAUDE.md` the lightest possible touch: the drafting bullet is appended
+to the standard working-rules section when that anchor survives, and printed
+for manual pasting when the manual has been customized past recognition.
 
 Everything else is an **opt-in module** (`email-intake`, `docs-intake`,
 `github-source`, `timeline`, `ledger`, `chapters`, `entities`). Modules compose;
