@@ -1,13 +1,15 @@
-"""`lifeproj equip` — sync spine skills into existing tekas.
+"""`lifeproj equip` — sync agent-facing spine assets into existing tekas.
 
-`lifeproj new` stamps spine skills into every fresh teka; this is the retrofit
-path for tekas scaffolded before a skill existed (or to pick up a newer
-version of one). Registry-driven like `drain --all`, resilient the same way:
-one teka's failure is logged and the fleet continues.
+`lifeproj new` stamps an AGENTS.md bridge plus Claude/Codex copies of every
+spine skill into a fresh teka. This is the retrofit path for tekas scaffolded
+before those assets existed (or to pick up a newer skill version).
+Registry-driven like `drain --all`, resilient the same way: one teka's failure
+is logged and the fleet continues.
 
 A teka may have deliberately customized its copy of a skill, so an existing
 file that differs from the packaged version is *kept* by default and reported;
-``--force`` overwrites it. `CLAUDE.md` is a living document, so it gets the
+``--force`` overwrites it. `AGENTS.md` and `CLAUDE.md` are living instructions,
+so they are never force-overwritten. `CLAUDE.md` gets the
 lightest possible touch: when its manual still carries the standard
 "## Working rules" section and doesn't mention the skill, the working-rule
 bullet is appended to that section; a manual customized beyond that anchor is
@@ -24,14 +26,28 @@ from lifeproj import registry, templates
 
 # relpath inside the teka -> relpath under src/lifeproj/data/
 SPINE_SKILLS = {
+    ".agents/skills/humanize/SKILL.md": "skills/humanize/SKILL.md",
     ".claude/skills/humanize/SKILL.md": "skills/humanize/SKILL.md",
 }
 
 CLAUDE_RULE_HINT = """\
 - **Drafts sound human.** Write every outgoing draft (email, letter, document)
-  with the `humanize` skill (`.claude/skills/humanize/`): no AI tells — em-dash
-  tics, "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own
-  voice from prior outgoing mail in `correspondence/` where it exists."""
+  with the `humanize` skill (`.agents/skills/humanize/` in Codex,
+  `.claude/skills/humanize/` in Claude Code): no AI tells — em-dash tics,
+  "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own voice
+  from prior outgoing mail in `correspondence/` where it exists."""
+
+
+def _install_agents_bridge(wd: Path, *, dry_run: bool) -> tuple[str, str]:
+    """Install the Codex bridge without overwriting living project guidance."""
+    target = wd / "AGENTS.md"
+    if not target.exists():
+        if not dry_run:
+            target.write_text(templates.AGENTS_BRIDGE)
+        return "AGENTS.md", "installed Codex bridge"
+    if target.read_text() == templates.AGENTS_BRIDGE:
+        return "AGENTS.md", "current"
+    return "AGENTS.md", "differs (kept; living instructions are never overwritten)"
 
 
 def _add_claude_rule(claude: Path, *, dry_run: bool) -> Optional[str]:
@@ -63,6 +79,8 @@ def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
     if not (wd / "catalog.json").exists():
         entry["status"], entry["error"] = "skipped", "no catalog.json (not a teka dir)"
         return entry
+
+    entry["actions"].append(_install_agents_bridge(wd, dry_run=dry_run))
 
     for relpath, datapath in SPINE_SKILLS.items():
         wanted = templates.data(datapath)
@@ -96,7 +114,12 @@ def equip_all(config_path: Optional[Path] = None, *, names: Optional[list] = Non
               force: bool = False, dry_run: bool = False) -> int:
     """Equip every registered active teka (or just ``names``). Exit code 1 if
     any teka errored or a requested name is unknown; skips are not errors."""
-    doc = registry.load(config_path)
+    try:
+        doc = registry.load(config_path)
+    except OSError as exc:
+        path = config_path or registry.config_path()
+        print(f"error: cannot read teka registry {path}: {exc}")
+        return 1
     fleet = registry.projects(doc)
     if names:
         unknown = [n for n in names if n not in fleet]
@@ -105,6 +128,10 @@ def equip_all(config_path: Optional[Path] = None, *, names: Optional[list] = Non
         fleet = {n: t for n, t in fleet.items() if n in (names or [])}
         if unknown:
             return 1
+
+    if not fleet:
+        print("no registered active tekas")
+        return 0
 
     prefix = "[dry-run] " if dry_run else ""
     rc, hint_needed = 0, []

@@ -1,8 +1,8 @@
 # lifeproj
 
-A thin orchestrator for **tekas** — local, encrypted, Claude-maintained life-admin
-projects (a legal matter, a tax year, a rental property, a condo board, dogfooding
-your own app).
+A thin orchestrator for **tekas** — local, agent-maintained life-admin projects
+with encrypted backups (a legal matter, a tax year, a rental property, a condo
+board, dogfooding your own app). Codex and Claude Code are both first-class.
 
 > *teka* (тека / θήκη / -thèque): a curated folder of material on one subject.
 > Each teka is a plain local folder; `~/personal` is the cabinet of them.
@@ -56,21 +56,24 @@ lifeproj overview
 lifeproj archive tax-2025 --purge-local
 lifeproj restore tax-2025
 
-# Retrofit spine skills (humanize) into tekas stamped before they existed.
-# Idempotent; keeps a teka's customized copy unless --force.
+# Retrofit Codex guidance + both agents' spine skills into existing tekas.
+# Idempotent; keeps customized skills unless --force and never replaces manuals.
 lifeproj equip
 ```
 
-`lifeproj new` stamps the folder, renders `CLAUDE.md` + a validated `catalog.json`
-+ the chosen modules, registers a `[projects.<name>]` block in cmirror's config,
-and renders `scripts/mail/.env` from your shared IMAP secrets + the one varying
-label. Then you open the folder in Claude Code and work it.
+`lifeproj new` stamps the folder, renders a shared `CLAUDE.md` operating manual,
+a Codex `AGENTS.md` bridge, a validated `catalog.json`, and the chosen modules.
+It registers a `[projects.<name>]` block in cmirror's config and renders
+`scripts/mail/.env` from your shared IMAP secrets + the one varying label. Then
+you open the folder in Codex or Claude Code and work it.
 
 ## Modules (opt-in)
 
-A teka is a thin spine (`CLAUDE.md` + `intake/` + `catalog.json` + `catalog_check.py`
-+ the `humanize` skill in `.claude/skills/`, so outgoing drafts don't read as
-AI-generated) plus the modules it turns on:
+A teka is a thin spine (`AGENTS.md` + `CLAUDE.md` + `intake/` + `catalog.json` +
+`catalog_check.py` + the `humanize` skill in both `.agents/skills/` and
+`.claude/skills/`, so outgoing drafts don't read as AI-generated) plus the
+modules it turns on. The operating manual remains single-sourced in `CLAUDE.md`;
+`AGENTS.md` tells Codex to load it, so the two agents cannot drift apart.
 
 | Module | Turns on |
 | --- | --- |
@@ -97,14 +100,16 @@ channel. The contract lives in **[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integ
 
 ## Privacy posture
 
-Everything runs in **local** Claude Code sessions. The only thing that ever leaves
-this machine is the **encrypted** cmirror backup. lifeproj never writes a key or
-passphrase — the age identity stays in cmirror's own config, outside every teka.
+Everything runs in local Codex or Claude Code sessions. Outside content included
+in the active model session, the only off-machine copy is the **encrypted**
+cmirror backup. lifeproj never writes a key or passphrase — the age identity
+stays in cmirror's own config, outside every teka.
 
 ## Status
 
-v0.4 — `new`, `overview`, `archive`, `restore`, `publish` work and `drain` is a
-documented stub; covered by tests. Generic intake/convert tools live in the
-homebrew tap and are called, not vendored here.
+v0.7 — fresh and existing tekas support Codex and Claude Code; `new`, `equip`,
+`overview`, `archive`, `restore`, `publish`, and completion draining are covered
+by tests. Generic intake/convert tools live in the homebrew tap and are called,
+not vendored here.
 
 MIT licensed.

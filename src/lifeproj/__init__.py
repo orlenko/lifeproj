@@ -1,4 +1,4 @@
-"""lifeproj — a thin orchestrator for *tekas*: local, encrypted, Claude-maintained life-admin projects.
+"""lifeproj — a thin orchestrator for local, agent-maintained *tekas* with encrypted backups.
 
 A teka is a plain local folder (the source of truth, plaintext, on this machine
 only). Durability + portability come from cmirror's encrypted mirror in Google
@@ -9,4 +9,4 @@ archive, restore, and a read-only overview.
 See docs/DESIGN.md for the full model.
 """
 
-__version__ = "0.6.2"
+__version__ = "0.7.0"

@@ -45,10 +45,10 @@ def config_path() -> Path:
 
 def load(path: Optional[Path] = None) -> TOMLDocument:
     path = path or config_path()
-    if path.exists():
+    try:
         return tomlkit.parse(path.read_text())
-    doc = tomlkit.parse(_NEW_CONFIG_HEADER)
-    return doc
+    except FileNotFoundError:
+        return tomlkit.parse(_NEW_CONFIG_HEADER)
 
 
 def save(doc: TOMLDocument, path: Optional[Path] = None) -> Path:

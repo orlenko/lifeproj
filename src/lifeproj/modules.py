@@ -1,11 +1,12 @@
 """Opt-in modules — the flexibility mechanism.
 
-A teka is a thin spine (CLAUDE.md + intake/ + catalog.json + checker) plus the
-modules it turns on. Modules compose; nobody pays for what they don't use; adding
-a capability later is just switching one on and re-stamping or copying its pieces.
+A teka is a thin agent-compatible spine (AGENTS.md + CLAUDE.md + intake/ +
+catalog.json + checker) plus the modules it turns on. Modules compose; nobody
+pays for what they don't use; adding a capability later is just switching one on
+and re-stamping or copying its pieces.
 
-Each module contributes some of: directories, files, a CLAUDE.md section, repo-map
-rows, extra ``catalog.json`` arrays, and whether it needs an IMAP folder.
+Each module contributes some of: directories, files, a shared-manual section,
+repo-map rows, extra ``catalog.json`` arrays, and whether it needs an IMAP folder.
 """
 
 from __future__ import annotations

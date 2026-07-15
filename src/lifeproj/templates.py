@@ -27,12 +27,28 @@ def data(relpath: str) -> str:
     return node.read_text()
 
 
+AGENTS_BRIDGE = """\
+# Codex instructions
+
+`CLAUDE.md` is this teka's shared operating manual. Read it completely before
+acting and follow it as repository instructions. The filename remains
+Claude-specific so existing tekas and Claude Code sessions keep working; its
+rules apply equally in Codex.
+
+- In Codex, use repo skills from `.agents/skills/`. Claude Code carries the same
+  skills in `.claude/skills/`.
+- Keep teka-specific operating guidance in `CLAUDE.md`; keep this file as the
+  stable Codex bridge so the two agents cannot acquire divergent manuals.
+"""
+
+
 CLAUDE_HEADER = """\
 # {{NAME}}
 
-> Operating manual for this teka. Loaded every Claude Code session — read it
-> fully before acting. A *teka* is a local, encrypted, Claude-maintained
-> life-admin project (see lifeproj/docs/DESIGN.md).
+> Shared operating manual for this teka. Claude Code loads it directly; Codex
+> is directed to it by `AGENTS.md`. Read it fully before acting. A *teka* is a
+> local, agent-maintained life-admin project with encrypted backups (see
+> lifeproj/docs/DESIGN.md).
 
 - **Domain:** {{DOMAIN}}
 - **Lifecycle:** {{LIFECYCLE}}  (ongoing = no end; finite = completes on a deliverable/decision)
@@ -58,12 +74,13 @@ CLAUDE_HEADER = """\
   send a message, sign, pay, or commit anything outbound without Vlad's explicit
   approval. Drafts wait in place for review.
 - **Drafts sound human.** Write every outgoing draft (email, letter, document)
-  with the `humanize` skill (`.claude/skills/humanize/`): no AI tells — em-dash
-  tics, "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own
-  voice from prior outgoing mail in `correspondence/` where it exists.
-- **Privacy posture.** Everything stays local. The only thing that leaves this
-  machine is the *encrypted* cmirror backup. Do not paste teka contents into web
-  tools or external services.
+  with the `humanize` skill (`.agents/skills/humanize/` in Codex,
+  `.claude/skills/humanize/` in Claude Code): no AI tells — em-dash tics,
+  "not X, but Y", rule-of-three, mechanical boldface. Match Vlad's own voice
+  from prior outgoing mail in `correspondence/` where it exists.
+- **Privacy posture.** Teka files stay local; off-machine durability is the
+  *encrypted* cmirror backup. Do not paste teka contents into web tools or
+  unrelated external services.
 - **Validate state.** Run `python3 catalog_check.py` after editing `catalog.json`.
 
 ## Open items — the task schema (kept current, every digest)
@@ -93,12 +110,14 @@ CLAUDE_FOOTER = """\
 
 | Path | What lives here |
 | ---- | --------------- |
-| `CLAUDE.md` | This operating manual. |
+| `CLAUDE.md` | Shared operating manual (loaded directly by Claude Code). |
+| `AGENTS.md` | Codex bridge to the shared operating manual. |
 | `README.md` | Human "start here" overview. |
 | `DASHBOARD.md` | At-a-glance current truth, regenerated from `catalog.json`. |
 | `catalog.json` | Structured single source of truth (documents / open items / log). |
 | `catalog_check.py` | Validator for `catalog.json`. |
-| `.claude/skills/` | Skills every teka carries (`humanize` — outgoing drafts avoid AI tells). |
+| `.agents/skills/` | Codex copies of teka skills (`humanize` — outgoing drafts avoid AI tells). |
+| `.claude/skills/` | Claude Code copies of the same teka skills. |
 | `intake/` | Transient dropzone — drained after filing (presence == unprocessed). |
 {{REPO_MAP_ROWS}}
 
@@ -107,8 +126,9 @@ CLAUDE_FOOTER = """\
 - Bespoke scripts for *this* teka live in `scripts/`. Generic, reusable tools
   (imap-extract, OCR/convert, eml→md) come from the homebrew tap and are called,
   not copied.
-- This file is the source of truth for *how* to work this teka; add a row above
-  whenever you add a folder.
+- `CLAUDE.md` is the shared source of truth for *how* to work this teka;
+  `AGENTS.md` deliberately stays a small bridge. Add a row above whenever you
+  add a folder.
 """
 
 README_TMPL = """\
@@ -116,8 +136,9 @@ README_TMPL = """\
 
 {{SUMMARY}}
 
-**Start here:** open this folder in Claude Code — `CLAUDE.md` is the operating
-manual. `DASHBOARD.md` is the current-state view.
+**Start here:** open this folder in Codex or Claude Code. `CLAUDE.md` is the
+shared operating manual (`AGENTS.md` directs Codex to it); `DASHBOARD.md` is the
+current-state view.
 
 - Domain: {{DOMAIN}} · Lifecycle: {{LIFECYCLE}} · Created: {{CREATED}}
 - Backup: encrypted via cmirror → `{{ENCRYPTED_DIR}}` (only ciphertext leaves the machine).
@@ -156,7 +177,7 @@ _None yet._
 
 ## Where things live
 
-See `CLAUDE.md` → Repository map.
+See `CLAUDE.md` → Repository map (`AGENTS.md` directs Codex to the manual).
 """
 
 # A small, dependency-free validator copied INTO each teka (thick teka, thin

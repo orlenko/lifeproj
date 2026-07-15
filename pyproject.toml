@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lifeproj"
-version = "0.6.2"
-description = "A thin orchestrator for tekas: local, encrypted, Claude-maintained life-admin projects."
+version = "0.7.0"
+description = "A thin orchestrator for local, agent-maintained life-admin projects with encrypted backups."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Vlad Orlenko", email = "vlad@orlenko.ca" }]
-keywords = ["cli", "life-admin", "cmirror", "imap-extract", "claude"]
+keywords = ["cli", "life-admin", "cmirror", "imap-extract", "claude", "codex", "agents"]
 dependencies = ["tomlkit>=0.12"]
 
 [project.urls]

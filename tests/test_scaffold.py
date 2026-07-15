@@ -23,7 +23,8 @@ class ScaffoldTests(unittest.TestCase):
             plan = self._build(tmp, [])
             res = scaffold.apply(plan)
             wd = Path(res["working_dir"])
-            for f in ("CLAUDE.md", "README.md", "DASHBOARD.md", "catalog.json", "catalog_check.py"):
+            for f in ("AGENTS.md", "CLAUDE.md", "README.md", "DASHBOARD.md",
+                      "catalog.json", "catalog_check.py"):
                 self.assertTrue((wd / f).exists(), f)
             # Tekas are local-only (no git), so no .gitignore is scaffolded.
             self.assertFalse((wd / ".gitignore").exists())
@@ -35,20 +36,31 @@ class ScaffoldTests(unittest.TestCase):
             for bucket in ("Overdue", "Due soon", "No deadline"):
                 self.assertIn(bucket, dash)
 
-    def test_spine_ships_humanize_skill(self):
+    def test_spine_supports_codex_and_claude_from_one_manual(self):
         with tempfile.TemporaryDirectory() as tmp:
             plan = self._build(tmp, [])
             res = scaffold.apply(plan)
             wd = Path(res["working_dir"])
-            skill = wd / ".claude" / "skills" / "humanize" / "SKILL.md"
-            self.assertTrue(skill.exists())
-            body = skill.read_text()
+            agents = (wd / "AGENTS.md").read_text()
+            claude = (wd / "CLAUDE.md").read_text()
+            self.assertIn("Read it completely before", agents)
+            self.assertIn("acting and follow it", agents)
+            self.assertIn("`CLAUDE.md`", agents)
+            self.assertIn("Codex", claude)
+            self.assertIn("Claude Code", claude)
+
+            codex_skill = wd / ".agents" / "skills" / "humanize" / "SKILL.md"
+            claude_skill = wd / ".claude" / "skills" / "humanize" / "SKILL.md"
+            self.assertTrue(codex_skill.exists())
+            self.assertTrue(claude_skill.exists())
+            body = codex_skill.read_text()
+            self.assertEqual(body, claude_skill.read_text())
             self.assertIn("name: humanize", body)
             # Copied verbatim — no unrendered tokens, attribution intact.
             self.assertNotIn("{{", body)
             self.assertIn("blader/humanizer", body)
-            # CLAUDE.md binds drafting to the skill.
-            claude = (wd / "CLAUDE.md").read_text()
+            # The shared manual binds drafting to both agents' skill copies.
+            self.assertIn(".agents/skills/humanize/", claude)
             self.assertIn(".claude/skills/humanize/", claude)
 
     def test_email_module_renders_env_and_correspondence(self):

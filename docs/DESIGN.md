@@ -6,11 +6,11 @@ code is thin enough to read after.
 ## 1. The pattern
 
 Several folders under `~/personal` are long-running, correspondence- and
-document-heavy threads of life-admin co-maintained with Claude: a legal matter, a
-tax year, a strata/condo board, rental properties, dogfooding an app. They are not
-N unrelated projects — they are **one system instantiated N times**, and the
-instance is a **teka** (тека / θήκη / -thèque: a curated folder of material on one
-subject). `~/personal` is the cabinet of tekas.
+document-heavy threads of life-admin co-maintained with Codex or Claude Code: a
+legal matter, a tax year, a strata/condo board, rental properties, dogfooding an
+app. They are not N unrelated projects — they are **one system instantiated N
+times**, and the instance is a **teka** (тека / θήκη / -thèque: a curated folder
+of material on one subject). `~/personal` is the cabinet of tekas.
 
 Each teka tangles two things that this framework pulls apart:
 
@@ -49,32 +49,42 @@ Two distinct "seed" events people run together:
 Every teka has the same thin spine:
 
 ```
-CLAUDE.md          operating manual, loaded every session (the teka's brain)
+AGENTS.md          Codex bridge to the shared operating manual
+CLAUDE.md          shared operating manual; Claude loads it directly
 README.md          human "start here"
 DASHBOARD.md       current truth, regenerated from catalog.json
 catalog.json       structured single source of truth
 catalog_check.py   validator (copied in — thick teka, thin centre)
-.claude/skills/    spine skills, copied in (humanize: drafts avoid AI tells)
+.agents/skills/    Codex copies of spine skills
+.claude/skills/    Claude Code copies of the same spine skills
 intake/            transient dropzone, drained after filing
 scripts/           bespoke per-teka automation
 ```
+
+The operating manual is deliberately single-sourced in `CLAUDE.md` for
+backward compatibility with existing tekas. Codex automatically loads
+`AGENTS.md`, whose stable bridge tells it to read and follow the shared manual.
+This keeps both agents first-class without maintaining two copies of evolving
+teka policy.
 
 The `humanize` skill (adapted from [blader/humanizer](https://github.com/blader/humanizer),
 MIT) rides in every teka because every teka drafts outgoing text — emails,
 letters, filings — and none of it should read as AI-generated. `CLAUDE.md`'s
 working rules bind drafting to it, and it voice-matches Vlad's prior outgoing
-mail in `correspondence/` when the teka has any. Tekas stamped before a spine
-skill existed are retrofitted with `lifeproj equip` (registry-driven like
-`drain --all`; keeps a teka's customized copy unless `--force`). It gives a
-living `CLAUDE.md` the lightest possible touch: the drafting bullet is appended
+mail in `correspondence/` when the teka has any. One packaged source is copied
+to both `.agents/skills/` and `.claude/skills/`. Tekas stamped before either
+agent asset existed are retrofitted with `lifeproj equip` (registry-driven like
+`drain --all`; keeps customized skills unless `--force`). Equip installs a
+missing `AGENTS.md` bridge but never overwrites living instruction files. It
+gives `CLAUDE.md` the lightest possible touch: the drafting bullet is appended
 to the standard working-rules section when that anchor survives, and printed
 for manual pasting when the manual has been customized past recognition.
 
 Everything else is an **opt-in module** (`email-intake`, `docs-intake`,
 `github-source`, `timeline`, `ledger`, `chapters`, `entities`). Modules compose;
 nobody pays for what they don't use; adding a capability later is switching one on.
-A module contributes some of: directories, files, a `CLAUDE.md` section, repo-map
-rows, extra `catalog.json` arrays, and whether it needs an IMAP folder.
+A module contributes some of: directories, files, a shared-manual section,
+repo-map rows, extra `catalog.json` arrays, and whether it needs an IMAP folder.
 
 **Domain overlays** (`legal`, `tenancy`, `condo`, `product`) are orthogonal: they
 layer guardrails (privilege caution, governing-law citations, dogfood posture) on
@@ -158,11 +168,13 @@ knowledge of my tekas?*
 2. **Wire intake** — create the IMAP label; for email tekas run `imap-extract
    --once` (or on a schedule). For dogfooding, point `sources/github.toml` at the
    repo.
-3. **Daily ops** — open the folder in Claude Code → read `CLAUDE.md` → run the
-   digest ritual → draft outbound (you approve). `cmirror backup` runs nightly via
+3. **Daily ops** — open the folder in Codex or Claude Code → read the shared
+   `CLAUDE.md` manual (Codex is directed there by `AGENTS.md`) → run the digest
+   ritual → draft outbound (you approve). `cmirror backup` runs nightly via
    launchd.
 4. **Add things** — turn on a module or just add a folder/script/array + a row in
-   `CLAUDE.md`'s repo-map. No central change unless it affects backup/intake.
+   the shared manual's repo-map. No central change unless it affects
+   backup/intake.
 5. **Archive** — `lifeproj archive <name>` runs a final `cmirror backup` +
    `verify`, moves the table to `[archived.*]` (backup stops), and with
    `--purge-local` deletes the local plaintext after verify. The encrypted blob
@@ -180,10 +192,11 @@ place you can decrypt it. One secret to guard; everything else self-restoring.
 
 ## 8. Privacy posture (firm)
 
-All work happens in **local Claude Code sessions** — never cloud-hosted. The only
-thing that leaves the machine is **encrypted** age backup. The accepted exposure
-ceiling is Claude Code conversation content to Anthropic; raw teka contents are
-never stored in the cloud in plain form, and never pasted into web tools.
+Work happens in local Codex or Claude Code sessions, not cloud-hosted workspaces.
+The accepted interactive exposure ceiling is content included in the active
+model session (OpenAI or Anthropic). Outside that session, the only off-machine
+copy is the **encrypted** age backup. Raw teka contents are never pasted into web
+tools or unrelated external services.
 
 ## 9. Naming
 
