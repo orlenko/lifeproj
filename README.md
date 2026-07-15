@@ -55,6 +55,10 @@ lifeproj overview
 # frees local disk). Reverse with `restore`.
 lifeproj archive tax-2025 --purge-local
 lifeproj restore tax-2025
+
+# Retrofit spine skills (humanize) into tekas stamped before they existed.
+# Idempotent; keeps a teka's customized copy unless --force.
+lifeproj equip
 ```
 
 `lifeproj new` stamps the folder, renders `CLAUDE.md` + a validated `catalog.json`
