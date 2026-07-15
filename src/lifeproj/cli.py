@@ -4,6 +4,7 @@
     lifeproj overview
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
+    lifeproj equip [<name> ...] [--force] [--dry-run]
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import datetime
 import sys
 from pathlib import Path
 
-from lifeproj import __version__, archive, osavul, overview, scaffold
+from lifeproj import __version__, archive, equip, osavul, overview, scaffold
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -126,6 +127,26 @@ def cmd_publish(args) -> int:
     return osavul.publish(Path(args.path).expanduser() if args.path else None)
 
 
+def cmd_equip(args) -> int:
+    config = Path(args.config).expanduser() if args.config else None
+    if args.path:
+        entry = equip.equip_teka(Path(args.path).expanduser(),
+                                 force=args.force, dry_run=args.dry_run)
+        prefix = "[dry-run] " if args.dry_run else ""
+        if entry["status"] == "skipped":
+            print(f"{prefix}{entry['dir']}: skipped — {entry['error']}")
+            return 1
+        for rel, act in entry["actions"]:
+            print(f"{prefix}{rel}: {act}")
+        if entry["claude_hint"]:
+            print("\nCLAUDE.md doesn't mention the skill yet. Suggested"
+                  " working-rules bullet (paste it there):\n")
+            print(equip.CLAUDE_RULE_HINT)
+        return 0
+    return equip.equip_all(config, names=args.name or None,
+                           force=args.force, dry_run=args.dry_run)
+
+
 def cmd_drain(args) -> int:
     if getattr(args, "all", False):
         config = Path(args.config).expanduser() if args.config else None
@@ -176,6 +197,16 @@ def build_parser() -> argparse.ArgumentParser:
     pub = sub.add_parser("publish", help="project this teka's open_items into the Osavul agenda spool")
     pub.add_argument("--path", help="teka dir (default: current directory)")
     pub.set_defaults(func=cmd_publish)
+
+    eq = sub.add_parser("equip", help="sync spine skills (humanize) into existing tekas")
+    eq.add_argument("name", nargs="*",
+                    help="registered teka name(s); default: every registered teka")
+    eq.add_argument("--path", help="equip one teka by directory instead of by name")
+    eq.add_argument("--force", action="store_true",
+                    help="overwrite a skill file the teka has customized")
+    eq.add_argument("--dry-run", action="store_true", help="report actions, write nothing")
+    eq.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
+    eq.set_defaults(func=cmd_equip)
 
     dr = sub.add_parser("drain", help="apply Osavul completion signals to a teka (or --all registered tekas)")
     dr.add_argument("--path", help="teka dir (default: current directory)")
