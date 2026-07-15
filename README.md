@@ -64,8 +64,9 @@ label. Then you open the folder in Claude Code and work it.
 
 ## Modules (opt-in)
 
-A teka is a thin spine (`CLAUDE.md` + `intake/` + `catalog.json` + `catalog_check.py`)
-plus the modules it turns on:
+A teka is a thin spine (`CLAUDE.md` + `intake/` + `catalog.json` + `catalog_check.py`
++ the `humanize` skill in `.claude/skills/`, so outgoing drafts don't read as
+AI-generated) plus the modules it turns on:
 
 | Module | Turns on |
 | --- | --- |
