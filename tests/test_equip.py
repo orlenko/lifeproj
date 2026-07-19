@@ -29,6 +29,10 @@ class EquipTests(unittest.TestCase):
             body = claude.read_text()
             start = body.index("- **Drafts sound human.**")
             end = body.index("- **Privacy posture.**")
+            body = body[:start] + body[end:]
+            # Pre-v0.8 manuals also predate the spine Osavul section.
+            start = body.index("## Publishing to Osavul")
+            end = body.index("## Repository map")
             claude.write_text(body[:start] + body[end:])
         return wd
 
@@ -52,6 +56,13 @@ class EquipTests(unittest.TestCase):
             bullet_at = claude.index(".agents/skills/humanize")
             next_section_at = claude.index("## Open items")
             self.assertTrue(rules_at < bullet_at < next_section_at)
+            # The Osavul publishing section lands before the repository map.
+            self.assertFalse(entry["osavul_hint"])
+            self.assertIn(("CLAUDE.md", "Osavul publishing section added"),
+                          entry["actions"])
+            osavul_at = claude.index("## Publishing to Osavul")
+            self.assertTrue(next_section_at < osavul_at
+                            < claude.index("## Repository map"))
             # Second run is a full no-op.
             entry = equip.equip_teka(wd)
             self.assertEqual(entry["actions"], [
@@ -68,7 +79,24 @@ class EquipTests(unittest.TestCase):
             (wd / "CLAUDE.md").write_text(before)
             entry = equip.equip_teka(wd)
             self.assertTrue(entry["claude_hint"])
+            self.assertTrue(entry["osavul_hint"])
             self.assertEqual((wd / "CLAUDE.md").read_text(), before)
+
+    def test_old_module_section_counts_as_taught(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp)
+            claude = wd / "CLAUDE.md"
+            body = claude.read_text()
+            at = body.index("## Repository map")
+            claude.write_text(
+                body[:at]
+                + "## Module: osavul (cross-teka agenda publishing)\n\n"
+                  "Run `lifeproj publish` as the last digest step.\n\n"
+                + body[at:])
+            entry = equip.equip_teka(wd)
+            self.assertFalse(entry["osavul_hint"])
+            self.assertNotIn("## Publishing to Osavul",
+                             (wd / "CLAUDE.md").read_text())
 
     def test_customized_skill_kept_unless_forced(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -102,6 +130,8 @@ class EquipTests(unittest.TestCase):
             entry = equip.equip_teka(wd, dry_run=True)
             self.assertIn(("AGENTS.md", "installed Codex bridge"), entry["actions"])
             self.assertIn(("CLAUDE.md", "drafting rule added to working rules"),
+                          entry["actions"])
+            self.assertIn(("CLAUDE.md", "Osavul publishing section added"),
                           entry["actions"])
             self.assertFalse((wd / "AGENTS.md").exists())
             for rel in SKILL_RELS:
@@ -147,6 +177,7 @@ class EquipTests(unittest.TestCase):
                 (CLAUDE_SKILL_REL, "current"),
             ])
             self.assertFalse(entry["claude_hint"])
+            self.assertFalse(entry["osavul_hint"])
 
 
 if __name__ == "__main__":

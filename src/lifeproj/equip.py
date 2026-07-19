@@ -12,9 +12,10 @@ file that differs from the packaged version is *kept* by default and reported;
 so they are never force-overwritten. `CLAUDE.md` gets the
 lightest possible touch: when its manual still carries the standard
 "## Working rules" section and doesn't mention the skill, the working-rule
-bullet is appended to that section; a manual customized beyond that anchor is
-left alone and the bullet is printed for a human (or the teka's own session)
-to paste.
+bullet is appended to that section; likewise the spine Osavul-publishing
+section is inserted before "## Repository map" when the manual doesn't carry
+the contract yet. A manual customized beyond those anchors is left alone and
+the missing text is printed for a human (or the teka's own session) to paste.
 """
 
 from __future__ import annotations
@@ -69,10 +70,29 @@ def _add_claude_rule(claude: Path, *, dry_run: bool) -> Optional[str]:
     return "drafting rule added to working rules"
 
 
+def _add_osavul_section(claude: Path, *, dry_run: bool) -> Optional[str]:
+    """Insert the spine Osavul-publishing section before the repository map.
+    Returns the action taken, or None when the standard heading is gone and the
+    section must be pasted by hand."""
+    lines = claude.read_text().splitlines()
+    at = next((i for i, line in enumerate(lines)
+               if line.startswith("## Repository map")), None)
+    if at is None:
+        return None
+    block = templates.CLAUDE_OSAVUL.rstrip("\n").splitlines() + [""]
+    if at and lines[at - 1].strip():
+        block.insert(0, "")
+    lines[at:at] = block
+    if not dry_run:
+        claude.write_text("\n".join(lines) + "\n")
+    return "Osavul publishing section added"
+
+
 def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
     """Sync spine skills into one teka dir. Returns a result entry."""
     entry = {"teka": wd.name, "dir": str(wd), "status": "ok",
-             "actions": [], "claude_hint": False, "error": None}
+             "actions": [], "claude_hint": False, "osavul_hint": False,
+             "error": None}
     if not wd.is_dir():
         entry["status"], entry["error"] = "skipped", "working_dir missing locally"
         return entry
@@ -107,6 +127,17 @@ def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
             entry["actions"].append(("CLAUDE.md", action))
         else:
             entry["claude_hint"] = True
+
+    # The Osavul publishing contract: present either as the spine section (new
+    # scaffolds) or the pre-v0.8 opt-in module section — both count as taught.
+    if claude.exists():
+        text = claude.read_text()
+        if "## Publishing to Osavul" not in text and "## Module: osavul" not in text:
+            action = _add_osavul_section(claude, dry_run=dry_run)
+            if action:
+                entry["actions"].append(("CLAUDE.md", action))
+            else:
+                entry["osavul_hint"] = True
     return entry
 
 
@@ -134,7 +165,7 @@ def equip_all(config_path: Optional[Path] = None, *, names: Optional[list] = Non
         return 0
 
     prefix = "[dry-run] " if dry_run else ""
-    rc, hint_needed = 0, []
+    rc, hint_needed, osavul_hint_needed = 0, [], []
     for name, table in fleet.items():
         wd_raw = table.get("working_dir") if hasattr(table, "get") else None
         if not wd_raw:
@@ -150,9 +181,16 @@ def equip_all(config_path: Optional[Path] = None, *, names: Optional[list] = Non
         print(f"{prefix}{name}: {summary}")
         if entry["claude_hint"]:
             hint_needed.append(name)
+        if entry["osavul_hint"]:
+            osavul_hint_needed.append(name)
 
     if hint_needed:
         print(f"\nCLAUDE.md in {', '.join(hint_needed)} has no standard working-rules"
               " section to extend. Paste this bullet where it fits:\n")
         print(CLAUDE_RULE_HINT)
+    if osavul_hint_needed:
+        print(f"\nCLAUDE.md in {', '.join(osavul_hint_needed)} has no"
+              " '## Repository map' heading to anchor the Osavul publishing"
+              " section. Paste this section where it fits:\n")
+        print(templates.CLAUDE_OSAVUL)
     return rc

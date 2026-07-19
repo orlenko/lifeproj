@@ -221,11 +221,23 @@ lifeproj's.
 - **CORE (every teka):** the strict `open_items[]` task schema + the digest
   discipline that keeps it current (`catalog_check.py` enforces it for
   `schema_version >= 2`; §3). Pure quality, no Osavul dependency.
-- **`osavul` module (opt-in):** the publish-to-spool step. A teka that doesn't
-  enable it simply never publishes; nothing else changes.
+- **Publishing (also every teka, since v0.8):** the publish-to-spool contract is
+  part of the spine manual (`templates.CLAUDE_OSAVUL`), so a teka knows it from
+  birth: the transport is the spool — never the a2a relay, which carries *asks*
+  ("confirm the wire before Monday"), not the standing list — the trigger is the
+  end of every digest (re-publish whenever `open_items[]` changes), the spool is
+  self-registering, and discreet slices (`slice_title` / `redact`) or publishing
+  nothing at all are legal by design. Before v0.8 this rode in an opt-in
+  `osavul` module and a fresh teka scaffolded without it would improvise a
+  transport; the module name survives as a compat no-op, and `lifeproj equip`
+  inserts the section into pre-v0.8 manuals.
 
 **The spool** — `~/.local/share/osavul/`, a sibling of the already-granted
-`undrudge/` spool (one line in the sandbox profile grants it everywhere):
+`undrudge/` spool. The teka session's sandbox profile must grant it — one
+`"$HOME/.local/share/osavul"` line in the shared teka profile (nono
+`safe-claude`; narrower: grant just `inbox/` + `outbox/`, keeping Osavul's
+merged `state/` unreadable to spokes). Until granted, publish/drain no-op with
+a one-line hint rather than failing the digest:
 
 ```
 inbox/   <teka>.agenda.json   each teka WRITES its slice; Osavul READS all

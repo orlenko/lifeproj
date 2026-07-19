@@ -65,11 +65,12 @@ CLAUDE_HEADER = """\
 - **Current truth first.** The job is to keep `catalog.json` and `DASHBOARD.md`
   reflecting *what is true now*. We do not track change-history; we track the
   present state (+ an explicit `timeline.md` only where a module adds one).
-- **The digest ritual** (run it whenever new material lands): drain `intake/` →
-  for each item read → classify → rename to `YYYY-MM-DD_slug` → move into the
-  right folder → record it in `catalog.json` → append a `processing_log[]` entry
-  → **reconcile `open_items[]`** (see below) → regenerate `DASHBOARD.md` → leave
-  `intake/` empty. Never delete originals.
+- **The digest ritual** (run it whenever new material lands): `lifeproj drain`
+  (apply Osavul closures, see below) → drain `intake/` → for each item read →
+  classify → rename to `YYYY-MM-DD_slug` → move into the right folder → record
+  it in `catalog.json` → append a `processing_log[]` entry → **reconcile
+  `open_items[]`** (see below) → regenerate `DASHBOARD.md` → leave `intake/`
+  empty → `lifeproj publish` (agenda slice, see below). Never delete originals.
 - **Monitors flag, humans act.** Intake/watchers only surface new material. Never
   send a message, sign, pay, or commit anything outbound without Vlad's explicit
   approval. Drafts wait in place for review.
@@ -103,6 +104,47 @@ still reflects reality; give every item a real `due` or an explicit
 it from `open_items[]` once it has shown as `done` once. Then regenerate
 `DASHBOARD.md` (Overdue · Due soon ≤7d · No deadline · everything else) and run
 `python3 catalog_check.py` — it enforces this schema.
+"""
+
+# Spine section: the Osavul publishing contract. Every teka carries it from
+# birth so no teka improvises a transport (the failure mode this prevents: a
+# fresh teka trying to hand its open items to Osavul over the a2a relay).
+# Also inserted into legacy manuals by `lifeproj equip`.
+CLAUDE_OSAVUL = """\
+## Publishing to Osavul (cross-teka agenda)
+
+Every teka publishes a standard **agenda slice** so Osavul, the chief-of-staff
+teka, can roll up outstanding work across the fleet — without any teka reading
+another's files. The transport is the shared **spool**, and only the spool: the
+a2a relay carries *asks* ("confirm the wire before Monday"), never the standing
+list.
+
+```
+~/.local/share/osavul/            (override: $OSAVUL_SPOOL)
+  inbox/   <teka>.agenda.json     this teka WRITES its slice; Osavul READS all
+  outbox/  <teka>.intake.json     Osavul WRITES completions; this teka drains
+```
+
+- **Publish last, every digest.** After `open_items[]` is reconciled and
+  `DASHBOARD.md` regenerated, run `lifeproj publish`. It projects `open_items[]`
+  into the frozen agenda-slice schema (the *Open items* schema above; contract
+  reference: lifeproj `docs/DESIGN.md` §10) and writes `inbox/<teka>.agenda.json`
+  atomically. Re-publish whenever `open_items[]` changes.
+- **Self-registering.** The slice file appearing in `inbox/` IS the
+  registration — no announcement, no registry entry.
+- **Ungranted spool = quiet no-op.** If this session's sandbox doesn't grant the
+  spool, `lifeproj publish` prints a one-line hint and exits 0; it never breaks
+  the digest. Ask Vlad to add the `~/.local/share/osavul` grant to the session
+  profile.
+- **Drain first.** Near the start of each digest, run `lifeproj drain`: it
+  applies completions Osavul wrote to `outbox/<teka>.intake.json` (items checked
+  off upstream, e.g. in Google Tasks) by moving those `open_items[]` to
+  `processing_log[]` and ACKing the outbox. Reconcile and publish *after*, so
+  the republished slice reflects the closures.
+- **Discretion is built in; silence is legal.** A sensitive item can ship a
+  sanitized `slice_title`, or `redact: true` for a generic title with
+  `waiting_on` masked. A teka may also legitimately never publish. Both are by
+  design, not errors.
 """
 
 CLAUDE_FOOTER = """\
