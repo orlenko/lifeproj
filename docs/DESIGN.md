@@ -136,6 +136,15 @@ competing with it:
 - The single varying intake value, `imap_folder`, rides **inside** the project
   table. cmirror ignores unknown keys; the intake shim reads it. (Verified against
   cmirror's config loader.)
+- lifeproj's own settings ride in a `[lifeproj]` table, ignored by cmirror the
+  same way `[archived]` is. Today: `encrypted_root` — the base folder new tekas
+  back up under (`encrypted_dir` defaults to `<root>/<name>`). Set it once with
+  `lifeproj root <path>`; `lifeproj root --rehome` repoints tekas whose
+  `encrypted_dir` vanished from disk (a dir that *exists* holds real ciphertext
+  and is never auto-moved). This replaced the hardcoded `~/personal/gd-sync/`
+  default after two tekas were scaffolded against a location that no longer
+  existed and the failure only surfaced at `cmirror backup` time — `lifeproj new`
+  now also warns at scaffold time when the target's parent is missing.
 - **No keys, ever.** The example config is "paths only, never a key or passphrase";
   the age identity lives in cmirror's `identity_file`, outside every teka. A
   per-teka `matter.toml` with an inline `key="age:..."` — as an early draft

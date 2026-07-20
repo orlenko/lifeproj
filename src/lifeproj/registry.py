@@ -8,7 +8,12 @@ facts:
 * an archived teka is moved to ``[archived.<name>]`` — cmirror stops touching it,
   but lifeproj still sees it (it reads both sections), so the record survives;
 * the extra ``imap_folder`` key rides along inside the project table — cmirror
-  ignores it, the intake shim reads it.
+  ignores it, the intake shim reads it;
+* lifeproj's own settings ride in a ``[lifeproj]`` table cmirror ignores the same
+  way it ignores ``[archived]``. Today that's ``encrypted_root`` — the base
+  folder under which new tekas' ``encrypted_dir`` defaults to ``<root>/<name>``,
+  so backup targets are never micromanaged per teka (set once via
+  ``lifeproj root``).
 
 No new config file is invented, and nothing here ever writes a key or passphrase:
 the age identity stays in cmirror's own ``identity_file``, outside every teka.
@@ -25,6 +30,7 @@ from tomlkit import TOMLDocument
 
 ACTIVE = "projects"
 ARCHIVED = "archived"
+LIFEPROJ = "lifeproj"
 
 _NEW_CONFIG_HEADER = (
     "# cmirror configuration — also the lifeproj teka registry.\n"
@@ -70,6 +76,44 @@ def projects(doc: TOMLDocument) -> dict:
 def archived(doc: TOMLDocument) -> dict:
     sec = _section(doc, ARCHIVED)
     return dict(sec) if sec else {}
+
+
+def encrypted_root(doc: TOMLDocument) -> Optional[Path]:
+    """The configured base folder for encrypted backups, or None.
+
+    ``[lifeproj].encrypted_root`` in cmirror's config; new tekas default their
+    ``encrypted_dir`` to ``<root>/<name>``.
+    """
+    sec = _section(doc, LIFEPROJ)
+    raw = sec.get("encrypted_root") if sec else None
+    return Path(str(raw)).expanduser() if raw else None
+
+
+def set_encrypted_root(doc: TOMLDocument, path: Path) -> None:
+    if LIFEPROJ not in doc:
+        doc[LIFEPROJ] = tomlkit.table()
+    doc[LIFEPROJ]["encrypted_root"] = str(path)
+
+
+def rehome_missing(doc: TOMLDocument, root: Path) -> list:
+    """Repoint active tekas whose ``encrypted_dir`` is absent on disk to
+    ``<root>/<name>``. An ``encrypted_dir`` that exists holds real ciphertext
+    and is never touched (moving data is cmirror's business, done by hand).
+    Mutates ``doc``; returns ``[(name, old, new), ...]`` for what changed.
+    """
+    moved = []
+    sec = _section(doc, ACTIVE) or {}
+    for name in sec:
+        table = sec[name]
+        old = table.get("encrypted_dir")
+        new = str(root / name)
+        if old and Path(str(old)).expanduser().exists():
+            continue
+        if old is not None and str(old) == new:
+            continue
+        table["encrypted_dir"] = new
+        moved.append((name, str(old) if old is not None else None, new))
+    return moved
 
 
 def find(doc: TOMLDocument, name: str):

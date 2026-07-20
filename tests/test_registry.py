@@ -80,6 +80,38 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             registry.archive(doc, "nope")
 
+    def test_encrypted_root_round_trip(self):
+        doc = self.doc()
+        self.assertIsNone(registry.encrypted_root(doc))
+        registry.set_encrypted_root(doc, Path("/backups/tekas"))
+        reparsed = tomlkit.parse(tomlkit.dumps(doc))
+        self.assertEqual(registry.encrypted_root(reparsed), Path("/backups/tekas"))
+        # cmirror's own keys and the project tables survive untouched.
+        self.assertEqual(reparsed["identity_file"],
+                         "/Users/me/.config/cmirror/identity.txt")
+        self.assertEqual(set(registry.projects(reparsed)), {"strata", "tax-2025"})
+
+    def test_rehome_missing_repoints_only_absent_active_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "root"
+            root.mkdir()
+            existing = Path(tmp) / "elsewhere" / "strata"
+            existing.mkdir(parents=True)
+            doc = self.doc()
+            doc["projects"]["strata"]["encrypted_dir"] = str(existing)
+            registry.archive(doc, "tax-2025")            # archived: never rehomed
+            registry.add(doc, "mila", "/wd/mila", "/gone/gd-sync/mila")
+            moved = registry.rehome_missing(doc, root)
+            self.assertEqual(moved,
+                             [("mila", "/gone/gd-sync/mila", str(root / "mila"))])
+            # An encrypted_dir that exists holds real ciphertext — kept as-is.
+            self.assertEqual(doc["projects"]["strata"]["encrypted_dir"],
+                             str(existing))
+            self.assertEqual(doc["archived"]["tax-2025"]["encrypted_dir"],
+                             "/Users/me/personal/gd-sync/tax-2025")
+            # Idempotent: the repointed dir is merely pending its first backup.
+            self.assertEqual(registry.rehome_missing(doc, root), [])
+
 
 if __name__ == "__main__":
     unittest.main()
