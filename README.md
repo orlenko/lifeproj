@@ -84,7 +84,7 @@ modules it turns on. The operating manual remains single-sourced in `CLAUDE.md`;
 | `ledger` | typed transactions that sum (rent, fees) |
 | `chapters` | finite episodes inside an ongoing teka (e.g. tenancies) |
 | `entities` | a table of comparable records you track/compare |
-| `osavul` | publish an agenda slice to the cross-teka [Osavul](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up) spool each digest |
+| `osavul` | (compat no-op) [Osavul](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up) agenda publishing is spine since v0.8 — every teka carries it |
 
 Domain overlays (`legal`, `tenancy`, `condo`, `product`) add the right guardrails
 on top — privilege caution, governing-law citations, etc.
@@ -92,11 +92,14 @@ on top — privilege caution, governing-law citations, etc.
 ## Cross-teka roll-up (Osavul)
 
 Every teka keeps a strict, current `open_items[]` task list (enforced by
-`catalog_check.py`). A teka with the `osavul` module runs `lifeproj publish` as the
-last step of each digest, projecting that list into a standard **agenda slice** on a
-shared spool so a chief-of-staff teka can answer "what needs me today, *everywhere*?"
-— without any teka reading another's files. `lifeproj drain` (v2 stub) is the return
-channel. The contract lives in **[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up)**.
+`catalog_check.py`) and runs `lifeproj publish` as the last step of each digest,
+projecting that list into a standard **agenda slice** on a shared spool so a
+chief-of-staff teka can answer "what needs me today, *everywhere*?" — without any
+teka reading another's files. The publishing contract is part of the spine manual,
+so a teka knows the transport (the spool, never the a2a relay) from birth;
+`lifeproj equip` retrofits it into older manuals. `lifeproj drain` is the return
+channel for completion signals (the routed-capture channel is still a stub). The
+contract lives in **[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up)**.
 
 ## Privacy posture
 
@@ -107,9 +110,10 @@ stays in cmirror's own config, outside every teka.
 
 ## Status
 
-v0.7 — fresh and existing tekas support Codex and Claude Code; `new`, `equip`,
-`overview`, `archive`, `restore`, `publish`, and completion draining are covered
-by tests. Generic intake/convert tools live in the homebrew tap and are called,
+v0.8 — every teka carries the Osavul publishing contract from birth (and `equip`
+retrofits it); fresh and existing tekas support Codex and Claude Code; `new`,
+`equip`, `overview`, `archive`, `restore`, `publish`, and completion draining are
+covered by tests. Generic intake/convert tools live in the homebrew tap and are called,
 not vendored here.
 
 MIT licensed.

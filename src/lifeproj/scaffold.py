@@ -40,6 +40,9 @@ def build(name: str, working_dir: Path, encrypted_dir: Path, *, domain: str,
         templates.CLAUDE_HEADER, NAME=name, DOMAIN=domain, LIFECYCLE=lifecycle,
         CREATED=created, INTAKE=intake_label, ARTIFACT=artifact_label, SUMMARY=summary,
     )
+    # The Osavul publishing contract is spine, not a module — every teka must
+    # know the transport (the spool, never a2a) from birth.
+    claude += "\n" + templates.CLAUDE_OSAVUL
     repo_rows = []
     for m in mods:
         section = templates.render(m.claude_section, CHAPTER_NOUN=chapter_noun)

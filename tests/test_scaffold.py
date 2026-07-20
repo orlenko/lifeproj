@@ -106,12 +106,23 @@ class ScaffoldTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("catalog OK", proc.stdout)
 
-    def test_osavul_module_adds_section(self):
+    def test_spine_teaches_osavul_publishing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            plan = self._build(tmp, ["osavul"])
-            claude = plan.files["CLAUDE.md"]
-            self.assertIn("Module: osavul", claude)
+            # Spine only — no module needed: every teka knows the contract at birth.
+            claude = self._build(tmp, []).files["CLAUDE.md"]
+            self.assertIn("## Publishing to Osavul", claude)
+            self.assertIn(".local/share/osavul", claude)
+            # Transport is the spool; a2a is explicitly not the publish path.
+            self.assertIn("a2a", claude)
+            # The digest ritual itself ends in publish and starts with drain.
             self.assertIn("lifeproj publish", claude)
+            self.assertIn("lifeproj drain", claude)
+            # Discreet/absent publishing is documented as legal.
+            self.assertIn("slice_title", claude)
+            # The old opt-in module is a harmless no-op — no duplicate section.
+            claude2 = self._build(tmp, ["osavul"]).files["CLAUDE.md"]
+            self.assertEqual(claude2.count("## Publishing to Osavul"), 1)
+            self.assertNotIn("Module: osavul", claude2)
 
     def _run_check(self, wd, open_items):
         catalog = json.loads((wd / "catalog.json").read_text())

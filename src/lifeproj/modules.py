@@ -174,46 +174,12 @@ table. Never delete a rejected entity — move it aside with the reason recorded
 it isn't re-evaluated.
 """,
     ),
+    # Since v0.8 the Osavul publishing contract is spine (templates.CLAUDE_OSAVUL)
+    # — every teka carries it from birth. The module name survives as a no-op so
+    # existing `--module osavul` invocations and scripts keep working.
     "osavul": Module(
         name="osavul",
-        summary="publish an agenda slice to the cross-teka Osavul spool each digest",
-        claude_section="""\
-## Module: osavul (cross-teka agenda publishing)
-
-This teka publishes a standard **agenda slice** so the Osavul chief-of-staff teka
-can roll up outstanding work across every teka — without any teka reading another's
-files. The rendezvous is a shared **spool** in the sandbox grant set:
-
-```
-~/.local/share/osavul/
-  inbox/   <teka>.agenda.json   this teka WRITES its slice; Osavul READS all
-  outbox/  <teka>.intake.json   Osavul WRITES routed items; this teka drains (v2)
-  state/                        Osavul's own merged output
-```
-
-**Publish last, every digest.** As the final step of the digest ritual — after
-`open_items[]` is reconciled and `DASHBOARD.md` regenerated — run:
-
-```
-lifeproj publish
-```
-
-It projects `open_items[]` into the agenda-slice schema (see *Open items* above,
-and lifeproj `docs/DESIGN.md`) and writes `inbox/<teka>.agenda.json` atomically.
-If the spool isn't provisioned yet it no-ops with a one-line hint — it never
-crashes the digest.
-
-**No cmirror key needed.** The spool is *self-registering*: a teka enters Osavul's
-world the first time it publishes. Do not add a registry entry for this.
-
-**Drain completions near the start of each digest.** Run `lifeproj drain`: it
-applies completion signals Osavul wrote to `outbox/<teka>.intake.json` — an item
-you checked off or deleted upstream (e.g. Google Tasks) — by moving those
-`open_items[]` to `processing_log[]` (`done`/`dropped`) and ACKing the outbox.
-Reconcile and `lifeproj publish` *after*, so the republished slice reflects the
-closures. Idempotent + a clean no-op if there's no outbox slot. (The `items[]`
-routed-capture channel is still a stub.)
-""",
+        summary="(compat no-op) agenda publishing is spine since v0.8 — every teka carries it",
     ),
 }
 

@@ -14,7 +14,7 @@ import datetime
 import sys
 from pathlib import Path
 
-from lifeproj import __version__, archive, equip, osavul, overview, scaffold
+from lifeproj import __version__, archive, equip, osavul, overview, scaffold, templates
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -92,7 +92,10 @@ def cmd_new(args) -> int:
         print(f"  2. Create the IMAP label {plan.imap_folder!r}, then: "
               f"cd {working_dir}/scripts/mail && imap-extract --once")
     print(f"  3. First backup: cmirror backup --project {name}")
-    print(f"  4. Open {working_dir} in Codex or Claude Code and run the digest ritual.")
+    print("  4. Sandbox: the teka session profile must grant ~/.local/share/osavul"
+          " (the agenda spool),")
+    print("     or `lifeproj publish` will no-op with a hint each digest.")
+    print(f"  5. Open {working_dir} in Codex or Claude Code and run the digest ritual.")
     return 0
 
 
@@ -142,6 +145,10 @@ def cmd_equip(args) -> int:
             print("\nCLAUDE.md has no standard working-rules section to extend."
                   " Paste this bullet where it fits:\n")
             print(equip.CLAUDE_RULE_HINT)
+        if entry["osavul_hint"]:
+            print("\nCLAUDE.md has no '## Repository map' heading to anchor the"
+                  " Osavul publishing section. Paste this section where it fits:\n")
+            print(templates.CLAUDE_OSAVUL)
         return 0
     return equip.equip_all(config, names=args.name or None,
                            force=args.force, dry_run=args.dry_run)
