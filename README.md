@@ -20,7 +20,7 @@ Three layers, deliberately separate:
 | Layer | What it is | Where it lives |
 | --- | --- | --- |
 | **Living content** | A teka — plaintext, the source of truth | a local folder, on this machine only |
-| **Durability + portability** | The encrypted mirror (only ciphertext leaves) | cmirror → `gd-sync/<name>` → Google Drive |
+| **Durability + portability** | The encrypted mirror (only ciphertext leaves) | cmirror → `<root>/<name>` (see `lifeproj root`) → Google Drive |
 | **The kit** | This scaffolder + the conventions | this git repo (no secrets) |
 
 GitHub never holds a teka's confidential content. A teka rides off-machine **only**
@@ -40,6 +40,10 @@ uv tool install .
 ## Quickstart
 
 ```sh
+# Once: set the base folder for encrypted backups (a synced Google Drive dir).
+# Every new teka's encrypted_dir defaults to <root>/<name> — no per-teka paths.
+lifeproj root ~/GoogleDrive/teka-backups
+
 # Scaffold a property teka: email + document intake, a rent ledger, and tenancies
 # as finite "chapters" inside an ongoing project.
 lifeproj new tenants-123main \
@@ -59,6 +63,10 @@ lifeproj restore tax-2025
 # Retrofit Codex guidance + both agents' spine skills into existing tekas.
 # Idempotent; keeps customized skills unless --force and never replaces manuals.
 lifeproj equip
+
+# If the backup location moved: check every teka's encrypted_dir against the
+# root, and repoint the ones whose dir no longer exists on disk.
+lifeproj root --rehome
 ```
 
 `lifeproj new` stamps the folder, renders a shared `CLAUDE.md` operating manual,
@@ -110,7 +118,7 @@ stays in cmirror's own config, outside every teka.
 
 ## Status
 
-v0.8 — every teka carries the Osavul publishing contract from birth (and `equip`
+v0.9 — configurable backup root (`lifeproj root`); every teka carries the Osavul publishing contract from birth (and `equip`
 retrofits it); fresh and existing tekas support Codex and Claude Code; `new`,
 `equip`, `overview`, `archive`, `restore`, `publish`, and completion draining are
 covered by tests. Generic intake/convert tools live in the homebrew tap and are called,

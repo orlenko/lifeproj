@@ -2,6 +2,7 @@
 
     lifeproj new <name> [--intake email,docs] [--artifact timeline,ledger] ...
     lifeproj overview
+    lifeproj root [<path>] [--rehome]
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
     lifeproj equip [<name> ...] [--force] [--dry-run]
@@ -14,7 +15,8 @@ import datetime
 import sys
 from pathlib import Path
 
-from lifeproj import __version__, archive, equip, osavul, overview, scaffold, templates
+from lifeproj import (__version__, archive, equip, osavul, overview, registry,
+                      scaffold, templates)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -52,8 +54,20 @@ def _modules_from_args(args) -> list:
 def cmd_new(args) -> int:
     name = args.name
     working_dir = Path(args.path).expanduser() if args.path else Path(f"~/personal/{name}").expanduser()
-    encrypted_dir = (Path(args.encrypted_dir).expanduser() if args.encrypted_dir
-                     else Path(f"~/personal/gd-sync/{name}").expanduser())
+    config = Path(args.config).expanduser() if args.config else None
+    # encrypted_dir: explicit flag > configured root (`lifeproj root`) > legacy
+    # default. The legacy path predates the root and may not exist any more —
+    # the note below surfaces that at scaffold time, not first-backup time.
+    try:
+        root = registry.encrypted_root(registry.load(config))
+    except OSError:
+        root = None   # registry unreadable (e.g. sandboxed dry-run) — fall back
+    if args.encrypted_dir:
+        encrypted_dir = Path(args.encrypted_dir).expanduser()
+    elif root:
+        encrypted_dir = root / name
+    else:
+        encrypted_dir = Path(f"~/personal/gd-sync/{name}").expanduser()
     created = datetime.date.today().isoformat()
     modules = _modules_from_args(args)
 
@@ -63,6 +77,11 @@ def cmd_new(args) -> int:
         modules=modules, created=created, imap_folder=args.imap_folder,
         chapter_noun=args.chapter_noun, register=not args.no_register,
     )
+    if plan.register and not encrypted_dir.parent.is_dir():
+        plan.notes.append(
+            f"encrypted_dir parent {encrypted_dir.parent} does not exist — cmirror"
+            " backup will fail until it does. Set the base folder once with"
+            " `lifeproj root <path>` (or pass --encrypted-dir).")
 
     if args.dry_run:
         print(f"[dry-run] would create teka {name!r} at {working_dir}")
@@ -77,7 +96,6 @@ def cmd_new(args) -> int:
         return 0
 
     shared = Path(args.imap_shared).expanduser() if args.imap_shared else None
-    config = Path(args.config).expanduser() if args.config else None
     result = scaffold.apply(plan, shared_env=shared, config_path=config)
 
     print(f"Created teka {name!r} at {result['working_dir']}")
@@ -102,6 +120,48 @@ def cmd_new(args) -> int:
 def cmd_overview(args) -> int:
     config = Path(args.config).expanduser() if args.config else None
     print(overview.render(overview.collect(config)))
+    return 0
+
+
+def cmd_root(args) -> int:
+    """Show or set [lifeproj].encrypted_root — the base folder new tekas back
+    up under — and report/repair each active teka's encrypted_dir against it."""
+    config = Path(args.config).expanduser() if args.config else None
+    doc = registry.load(config)
+    changed = False
+    if args.path:
+        root = Path(args.path).expanduser()
+        if not root.is_dir():
+            print(f"error: {root} is not an existing directory — create/sync it"
+                  " first (is Google Drive for Desktop running?)", file=sys.stderr)
+            return 1
+        registry.set_encrypted_root(doc, root)
+        changed = True
+    root = registry.encrypted_root(doc)
+    if root is None:
+        print("no encrypted root configured; set one with: lifeproj root <path>")
+        return 0
+
+    if args.rehome:
+        for name, old, new in registry.rehome_missing(doc, root):
+            print(f"{name}: rehomed {old} -> {new}")
+            changed = True
+    if changed:
+        registry.save(doc, config)
+
+    print(f"encrypted root: {root}")
+    for name, table in registry.projects(doc).items():
+        raw = table.get("encrypted_dir") if hasattr(table, "get") else None
+        if not raw:
+            print(f"  {name}: no encrypted_dir in registry")
+            continue
+        ed = Path(str(raw)).expanduser()
+        if ed.exists():
+            note = "ok" if ed.parent == root else f"ok (outside root: {ed})"
+        else:
+            note = (f"MISSING {ed} — repoint with `lifeproj root --rehome`"
+                    if not args.rehome else f"pending first backup: {ed}")
+        print(f"  {name}: {note}")
     return 0
 
 
@@ -169,7 +229,9 @@ def build_parser() -> argparse.ArgumentParser:
     n = sub.add_parser("new", help="scaffold a new teka")
     n.add_argument("name")
     n.add_argument("--path", help="working dir (default ~/personal/<name>)")
-    n.add_argument("--encrypted-dir", help="cmirror encrypted_dir (default ~/personal/gd-sync/<name>)")
+    n.add_argument("--encrypted-dir",
+                   help="cmirror encrypted_dir (default <root>/<name> per `lifeproj root`,"
+                        " legacy ~/personal/gd-sync/<name> when no root is set)")
     n.add_argument("--domain", default="general", help="legal | tenancy | condo | product | tax | general")
     n.add_argument("--lifecycle", default="ongoing", choices=["ongoing", "finite"])
     n.add_argument("--summary", help="one-line description of the teka")
@@ -187,6 +249,13 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("overview", help="cross-teka read-only status")
     o.add_argument("--config")
     o.set_defaults(func=cmd_overview)
+
+    rt = sub.add_parser("root", help="show or set the base folder for encrypted backups")
+    rt.add_argument("path", nargs="?", help="new root (must already exist); omit to show")
+    rt.add_argument("--rehome", action="store_true",
+                    help="repoint active tekas whose encrypted_dir is missing on disk to <root>/<name>")
+    rt.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
+    rt.set_defaults(func=cmd_root)
 
     a = sub.add_parser("archive", help="retire a teka from the sync cycle")
     a.add_argument("name")
