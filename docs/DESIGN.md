@@ -242,11 +242,16 @@ lifeproj's.
   inserts the section into pre-v0.8 manuals.
 
 **The spool** — `~/.local/share/osavul/`, a sibling of the already-granted
-`undrudge/` spool. The teka session's sandbox profile must grant it — one
-`"$HOME/.local/share/osavul"` line in the shared teka profile (nono
-`safe-claude`; narrower: grant just `inbox/` + `outbox/`, keeping Osavul's
-merged `state/` unreadable to spokes). Until granted, publish/drain no-op with
-a one-line hint rather than failing the digest:
+`undrudge/` spool. The session's sandbox profile must grant it — one
+`"$HOME/.local/share/osavul"` line — and that grant deliberately does **not**
+live in the shared teka profile. It rides in a dedicated profile reached through
+the `osavul-claude` launcher alias, so the base teka profile stays minimal and
+the spool is reachable only from sessions that actually publish. (Narrower still
+is possible: grant just `inbox/` + `outbox/`, keeping Osavul's merged `state/`
+unreadable to spokes.) A teka session started without that alias therefore hits
+the no-op path by design — publish/drain print a one-line hint rather than
+failing the digest — so an absent grant is a launch choice, not a
+misconfiguration to go fix:
 
 ```
 inbox/   <teka>.agenda.json   each teka WRITES its slice; Osavul READS all
