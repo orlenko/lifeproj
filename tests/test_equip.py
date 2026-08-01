@@ -97,6 +97,33 @@ class EquipTests(unittest.TestCase):
             self.assertFalse(entry["osavul_hint"])
             self.assertNotIn("## Publishing to Osavul",
                              (wd / "CLAUDE.md").read_text())
+            # The old heading still anchors later additions.
+            self.assertIn(("CLAUDE.md", "cross-teka brief bullet added"),
+                          entry["actions"])
+
+    def test_pre_brief_manual_gains_only_the_missing_bullet(self):
+        """A teka equipped at v0.8-v0.9 carries the publishing section but not
+        the reading end of it. Equip adds that one bullet in place — it never
+        rewrites a section a human may have edited."""
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp, pre_assets=False)
+            claude = wd / "CLAUDE.md"
+            older = claude.read_text().replace(templates.CLAUDE_BRIEF_BULLET, "")
+            self.assertNotIn("lifeproj brief", older)
+            claude.write_text(older)
+
+            entry = equip.equip_teka(wd)
+            self.assertIn(("CLAUDE.md", "cross-teka brief bullet added"),
+                          entry["actions"])
+            after = claude.read_text()
+            self.assertTrue(after.index("## Publishing to Osavul")
+                            < after.index("lifeproj brief")
+                            < after.index("## Repository map"))
+
+            entry = equip.equip_teka(wd)
+            self.assertNotIn(("CLAUDE.md", "cross-teka brief bullet added"),
+                             entry["actions"])
+            self.assertEqual(after, claude.read_text())
 
     def test_customized_skill_kept_unless_forced(self):
         with tempfile.TemporaryDirectory() as tmp:

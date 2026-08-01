@@ -110,6 +110,17 @@ it from `open_items[]` once it has shown as `done` once. Then regenerate
 # birth so no teka improvises a transport (the failure mode this prevents: a
 # fresh teka trying to hand its open items to Osavul over the a2a relay).
 # Also inserted into legacy manuals by `lifeproj equip`.
+# Kept separate so `lifeproj equip` can append it to manuals that already carry
+# the publishing section — the section itself ends with it, so the two paths
+# cannot drift.
+CLAUDE_BRIEF_BULLET = """\
+- **The merged view is `lifeproj brief`.** Run from anywhere (including this
+  teka's session, when the spool is granted) for every teka's published slice in
+  one list, sorted by urgency. It reads slices only — never another teka's files
+  — so what it shows *about this teka* is exactly what was last published here.
+  A brief that looks wrong means this teka owes a digest, not that the tool lied.
+"""
+
 CLAUDE_OSAVUL = """\
 ## Publishing to Osavul (cross-teka agenda)
 
@@ -145,7 +156,7 @@ list.
   sanitized `slice_title`, or `redact: true` for a generic title with
   `waiting_on` masked. A teka may also legitimately never publish. Both are by
   design, not errors.
-"""
+""" + CLAUDE_BRIEF_BULLET
 
 CLAUDE_FOOTER = """\
 ## Repository map

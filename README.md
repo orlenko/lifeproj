@@ -55,6 +55,10 @@ lifeproj new tenants-123main \
 # See every teka at a glance: queued intake, last-backup age, mail label.
 lifeproj overview
 
+# The Monday-morning question, once, from anywhere: what needs me today across
+# every teka? Reads the published agenda slices; never enters a teka.
+lifeproj brief --days 7
+
 # Retire a finished teka from the nightly sync (keeps the encrypted Drive backup,
 # frees local disk). Reverse with `restore`.
 lifeproj archive tax-2025 --purge-local
@@ -106,8 +110,14 @@ chief-of-staff teka can answer "what needs me today, *everywhere*?" — without 
 teka reading another's files. The publishing contract is part of the spine manual,
 so a teka knows the transport (the spool, never the a2a relay) from birth;
 `lifeproj equip` retrofits it into older manuals. `lifeproj drain` is the return
-channel for completion signals (the routed-capture channel is still a stub). The
-contract lives in **[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up)**.
+channel for completion signals (the routed-capture channel is still a stub).
+
+**`lifeproj brief`** is the reading end of the same contract: one merged list of
+every teka's open items, bucketed by urgency, from any directory. It is a pure
+reader — no teka is entered and no teka's scripts are run — and it flags what it
+can't vouch for: slices older than a week, tekas that never published, and
+completions still waiting to be drained. The contract lives in
+**[docs/DESIGN.md](docs/DESIGN.md#10-osavul-integration-cross-teka-roll-up)**.
 
 ## Privacy posture
 
@@ -118,9 +128,11 @@ stays in cmirror's own config, outside every teka.
 
 ## Status
 
-v0.9 — configurable backup root (`lifeproj root`); every teka carries the Osavul publishing contract from birth (and `equip`
-retrofits it); fresh and existing tekas support Codex and Claude Code; `new`,
-`equip`, `overview`, `archive`, `restore`, `publish`, and completion draining are
+v0.10 — `lifeproj brief`, one cross-teka list of what needs you, read from the
+published slices; configurable backup root (`lifeproj root`); every teka carries
+the Osavul publishing contract from birth (and `equip` retrofits it); fresh and
+existing tekas support Codex and Claude Code; `new`, `equip`, `overview`,
+`brief`, `archive`, `restore`, `publish`, and completion draining are
 covered by tests. Generic intake/convert tools live in the homebrew tap and are called,
 not vendored here.
 

@@ -2,6 +2,7 @@
 
     lifeproj new <name> [--intake email,docs] [--artifact timeline,ledger] ...
     lifeproj overview
+    lifeproj brief [--days 7] [--teka <name>]
     lifeproj root [<path>] [--rehome]
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
@@ -12,11 +13,12 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import sys
 from pathlib import Path
 
-from lifeproj import (__version__, archive, equip, osavul, overview, registry,
-                      scaffold, templates)
+from lifeproj import (__version__, archive, brief, equip, osavul, overview,
+                      registry, scaffold, templates)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -121,6 +123,15 @@ def cmd_overview(args) -> int:
     config = Path(args.config).expanduser() if args.config else None
     print(overview.render(overview.collect(config)))
     return 0
+
+
+def cmd_brief(args) -> int:
+    """One merged list across every teka, read from the published slices."""
+    config = Path(args.config).expanduser() if args.config else None
+    data = brief.collect(config, tekas=args.teka or None, days=args.days)
+    print(json.dumps(data, indent=2) if args.json
+          else brief.render(data, full=args.full))
+    return 1 if data["unknown"] else 0
 
 
 def cmd_root(args) -> int:
@@ -249,6 +260,17 @@ def build_parser() -> argparse.ArgumentParser:
     o = sub.add_parser("overview", help="cross-teka read-only status")
     o.add_argument("--config")
     o.set_defaults(func=cmd_overview)
+
+    b = sub.add_parser("brief", help="one merged list across every teka: what needs you today")
+    b.add_argument("--teka", action="append", default=[],
+                   help="limit to this teka (repeatable)")
+    b.add_argument("--days", type=int, metavar="N",
+                   help="only items due within N days (plus overdue); drops undated ones")
+    b.add_argument("--full", action="store_true",
+                   help="don't clip long titles to one line")
+    b.add_argument("--json", action="store_true", help="emit structured JSON")
+    b.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
+    b.set_defaults(func=cmd_brief)
 
     rt = sub.add_parser("root", help="show or set the base folder for encrypted backups")
     rt.add_argument("path", nargs="?", help="new root (must already exist); omit to show")
