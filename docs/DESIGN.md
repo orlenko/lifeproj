@@ -291,6 +291,41 @@ variation is legitimate; the slice's is not).
   from inside a sandboxed session. This is what takes the steady-state loop off the
   LLM: pull → `drain --all` → roll-up, all deterministic CLIs.
 
+### `lifeproj brief` — the reading end (v0.10)
+
+The published slices already answer "what needs me today, *everywhere*?" for a
+human at a shell prompt, not just for Osavul. `lifeproj brief` walks the registry,
+reads each active teka's slice, and prints one list bucketed by urgency (overdue /
+today / next 7 days / later / no deadline / waiting on someone else), `--days N`
+to narrow the horizon, `--teka` to filter, `--json` for machine use.
+
+It is a **pure reader**: it never enters a teka, never runs a teka's own scripts,
+never writes. That is the design choice worth stating, because the obvious
+alternative — a script that `cd`s through a fixed list of teka repos and merges
+the stdout of each one's bespoke rollup — hardcodes a fleet list that rots (§5's
+lesson, the same one behind `lifeproj root`) and defines no contract between the
+parts. The slice contract already exists; `brief` consumes it and nothing else.
+
+Because a slice is a *cached* projection, the brief states what it cannot vouch
+for rather than presenting stale work as current:
+
+- a source `generated` more than 7 days ago is flagged (`slice is 11d old`);
+- a registered teka that has never published is named, not silently omitted;
+- undrained `outbox` completions are reported — shown items may already be closed;
+- slices with no active teka (an archived teka's leftovers, another tool's
+  publisher) are named and deliberately *not* briefed.
+
+Degradation is deliberate. With no spool it prints a hint and exits 0 (the same
+posture as `publish`). When cmirror's config is unreadable — a sandboxed teka
+session that grants the spool but not the registry — it briefs every slice on the
+spool and says so, so the command still works *inside* a teka, which is where the
+question tends to get asked. The spine manual teaches it alongside publishing
+(`templates.CLAUDE_BRIEF_BULLET`), and `equip` appends that one bullet to manuals
+written before v0.10 without rewriting the section around it.
+
+Osavul remains where judgment, routing and reconciliation happen; `brief` is the
+mechanical glance you take before deciding whether to open Osavul at all.
+
 ### The contract (frozen) — agenda slice: `inbox/<teka>.agenda.json`
 
 ```json

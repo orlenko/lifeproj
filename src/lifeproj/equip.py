@@ -31,6 +31,11 @@ SPINE_SKILLS = {
     ".claude/skills/humanize/SKILL.md": "skills/humanize/SKILL.md",
 }
 
+# The publishing contract is taught either by the spine section (v0.8+ scaffolds)
+# or the pre-v0.8 opt-in module section — both count as taught, and both are
+# valid anchors for later additions.
+OSAVUL_HEADINGS = ("## Publishing to Osavul", "## Module: osavul")
+
 CLAUDE_RULE_HINT = """\
 - **Drafts sound human.** Write every outgoing draft (email, letter, document)
   with the `humanize` skill (`.agents/skills/humanize/` in Codex,
@@ -51,23 +56,44 @@ def _install_agents_bridge(wd: Path, *, dry_run: bool) -> tuple[str, str]:
     return "AGENTS.md", "differs (kept; living instructions are never overwritten)"
 
 
-def _add_claude_rule(claude: Path, *, dry_run: bool) -> Optional[str]:
-    """Append the drafting rule to CLAUDE.md's working-rules section. Returns
-    the action taken, or None when the standard heading is gone and the bullet
-    must be pasted by hand."""
+def _append_to_section(claude: Path, headings, block: str, *, dry_run: bool) -> bool:
+    """Append ``block`` to the end of the first section in ``headings`` that the
+    manual actually carries. False when none is present — the caller then falls
+    back to printing the text for a human to paste."""
     lines = claude.read_text().splitlines()
     start = next((i for i, line in enumerate(lines)
-                  if line.startswith("## Working rules")), None)
+                  if any(line.startswith(h) for h in headings)), None)
     if start is None:
-        return None
+        return False
     end = next((i for i in range(start + 1, len(lines))
                 if lines[i].startswith("## ")), len(lines))
     while end > start + 1 and not lines[end - 1].strip():
         end -= 1
-    lines[end:end] = CLAUDE_RULE_HINT.splitlines()
+    lines[end:end] = block.rstrip("\n").splitlines()
     if not dry_run:
         claude.write_text("\n".join(lines) + "\n")
+    return True
+
+
+def _add_claude_rule(claude: Path, *, dry_run: bool) -> Optional[str]:
+    """Append the drafting rule to CLAUDE.md's working-rules section. Returns
+    the action taken, or None when the standard heading is gone and the bullet
+    must be pasted by hand."""
+    if not _append_to_section(claude, ("## Working rules",), CLAUDE_RULE_HINT,
+                              dry_run=dry_run):
+        return None
     return "drafting rule added to working rules"
+
+
+def _add_brief_bullet(claude: Path, *, dry_run: bool) -> Optional[str]:
+    """Teach a manual that already carries the publishing contract about the
+    reading end of it (`lifeproj brief`) — the smallest possible touch, so a
+    teka equipped before v0.10 learns the merged view without its section being
+    rewritten."""
+    if not _append_to_section(claude, OSAVUL_HEADINGS,
+                              templates.CLAUDE_BRIEF_BULLET, dry_run=dry_run):
+        return None
+    return "cross-teka brief bullet added"
 
 
 def _add_osavul_section(claude: Path, *, dry_run: bool) -> Optional[str]:
@@ -130,14 +156,20 @@ def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
 
     # The Osavul publishing contract: present either as the spine section (new
     # scaffolds) or the pre-v0.8 opt-in module section — both count as taught.
+    # A manual that has the section but predates `lifeproj brief` gets just the
+    # one missing bullet; the section is never rewritten around it.
     if claude.exists():
         text = claude.read_text()
-        if "## Publishing to Osavul" not in text and "## Module: osavul" not in text:
+        if not any(h in text for h in OSAVUL_HEADINGS):
             action = _add_osavul_section(claude, dry_run=dry_run)
             if action:
                 entry["actions"].append(("CLAUDE.md", action))
             else:
                 entry["osavul_hint"] = True
+        elif "lifeproj brief" not in text:
+            action = _add_brief_bullet(claude, dry_run=dry_run)
+            entry["actions"].append(("CLAUDE.md", action or
+                                     "no Osavul section anchor for the brief bullet"))
     return entry
 
 

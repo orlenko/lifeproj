@@ -119,6 +119,8 @@ class ScaffoldTests(unittest.TestCase):
             self.assertIn("lifeproj drain", claude)
             # Discreet/absent publishing is documented as legal.
             self.assertIn("slice_title", claude)
+            # And the reading end of the same contract.
+            self.assertIn("lifeproj brief", claude)
             # The old opt-in module is a harmless no-op — no duplicate section.
             claude2 = self._build(tmp, ["osavul"]).files["CLAUDE.md"]
             self.assertEqual(claude2.count("## Publishing to Osavul"), 1)
