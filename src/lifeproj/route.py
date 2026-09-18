@@ -73,6 +73,19 @@ QUESTIONS = {
         "instructions": "Does `task.description` ask the agent to write prose "
                         "that will be sent to or read by a person other than the owner?",
     },
+    "asks_for_care": {
+        "type": "noul",
+        "instructions": "Does the author of `task.description` explicitly ask for "
+                        "extra care or thoroughness, or say they are worried about "
+                        "getting it wrong?",
+        "criteria": {
+            "true": "Words like 'deep check', 'deep re-read', 'carefully', "
+                    "'double-check', 'thorough', or a stated worry such "
+                    "as 'so we don't embarrass ourselves' or 'so I don't send "
+                    "something stupid'",
+            "false": "A plain request with no comment on how carefully to do it",
+        },
+    },
     "is_code": {
         "type": "noul",
         "instructions": "Does `task.description` ask the agent to write or "
@@ -85,7 +98,11 @@ DEEP = 2.5          # reasoning_depth at or above this needs opus
 MODERATE = 1.75     # ... and this needs sonnet
 COSTLY = 2.25       # error_cost at or above this raises the floor
 SEVERE = 2.5        # with DEEP, this is a fable task
+COSTLY_CONSENSUS = 0.6  # ... as does this much probability on "costly" or "severe":
+                        # a firm "costly" scores 2.0 and would never reach COSTLY
 PROSE = 0.5
+CARE = 0.5          # the author asked for extra care: one tier up, at most opus
+CARE_DEPTH = 1.5    # ... but care about a mechanical step doesn't need opus
 # A split depth judgment bumps one tier only when real probability sits on
 # levels the chosen tier is too small for. (Confidence alone is the wrong
 # signal: a split between "mechanical" and "moderate" is low-confidence and
@@ -122,14 +139,17 @@ def decide(answers: dict) -> tuple[str, list]:
     depth = answers["reasoning_depth"]["score"]
     cost = answers["error_cost"]["score"]
     prose = answers["writes_for_human"]["noul"]
+    cost_levels = answers["error_cost"].get("probabilities") or {}
+    costly = (cost >= COSTLY or
+              cost_levels.get("2", 0.0) + cost_levels.get("3", 0.0) >= COSTLY_CONSENSUS)
 
     if depth >= DEEP and cost >= SEVERE:
         tier, why = "fable", ["deep reasoning with severe error cost"]
     elif depth >= DEEP:
         tier, why = "opus", ["deep reasoning"]
-    elif depth >= MODERATE and (cost >= COSTLY or prose >= PROSE):
+    elif depth >= MODERATE and (costly or prose >= PROSE):
         tier, why = "opus", ["moderate reasoning on costly or outbound work"]
-    elif depth >= MODERATE or cost >= COSTLY or prose >= PROSE:
+    elif depth >= MODERATE or costly or prose >= PROSE:
         tier, why = "sonnet", ["moderate reasoning, costly error, or outbound prose"]
     else:
         tier, why = "haiku", ["mechanical or light judgment, cheap to get wrong"]
@@ -143,6 +163,10 @@ def decide(answers: dict) -> tuple[str, list]:
     elif tier == "sonnet" and p_deep >= BUMP_TO_OPUS:
         tier = "opus"
         why.append(f"P(deep) {p_deep:.2f} ≥ {BUMP_TO_OPUS}: bumped to opus")
+    care = answers.get("asks_for_care", {}).get("noul", 0.0)
+    if care >= CARE and (tier == "haiku" or (tier == "sonnet" and depth >= CARE_DEPTH)):
+        tier = TIERS[TIERS.index(tier) + 1]
+        why.append(f"author asked for extra care ({care:.2f}): up one tier")
     return tier, why
 
 
@@ -230,6 +254,7 @@ def route(description: str, *, domain: Optional[str] = None,
                 "error_cost": round(answers["error_cost"]["score"], 2),
                 "writes_for_human": round(answers["writes_for_human"]["noul"], 2),
                 "is_code": round(answers["is_code"]["noul"], 2),
+                "asks_for_care": round(answers["asks_for_care"]["noul"], 2),
                 **{qid: round(answers[qid]["noul"], 2) for qid in (extra_questions or {})},
             }
         except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
@@ -269,9 +294,16 @@ def hook(log_path: Optional[Path] = None) -> int:
                    log_fields={"kind": "spawn", "session": event.get("session_id")})
     if not result["routed"]:
         return 0
+    # A session leaves `model` unset unless someone chose one — the user ("spawn
+    # an Opus subagent") or the prompt hook's instruction. Routing may raise
+    # that choice, never lower it.
+    chosen = tool_input.get("model")
+    model = result["model"]
+    if chosen in TIERS and TIERS.index(chosen) > TIERS.index(model):
+        model = chosen
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
-        "updatedInput": {**tool_input, "model": result["model"]},
+        "updatedInput": {**tool_input, "model": model},
     }}))
     return 0
 
