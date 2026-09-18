@@ -76,6 +76,34 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(entry["model"], "fable")
         self.assertEqual(entry["scores"]["reasoning_depth"], 3.0)
 
+    def test_request_log_keeps_the_whole_exchange(self):
+        reply = {"model": "jev-1.13.0", "answers": answers(3.0, 2.8),
+                 "usage": {"input_tokens": 600, "output_tokens": 40}}
+        route.route("plan the filing", log_path=self.log, post=mock.Mock(return_value=reply),
+                    extra_state={"previous_assistant_reply": "file both?"},
+                    log_fields={"kind": "prompt", "session": "s1"})
+        decision = json.loads(self.log.read_text())
+        exchange = json.loads((self.log.parent / route.REQUESTS_NAME).read_text())
+        self.assertEqual(exchange["at"], decision["at"])
+        self.assertEqual((exchange["kind"], exchange["session"]), ("prompt", "s1"))
+        self.assertEqual(exchange["request"]["state"]["previous_assistant_reply"], "file both?")
+        self.assertEqual(exchange["request"]["questions"], route.QUESTIONS)
+        self.assertEqual(exchange["response"], reply)
+        self.assertEqual(exchange["decision"], "fable")
+        self.assertNotIn("k", json.dumps(exchange["request"]).split())  # no api key in the body
+
+    def test_request_log_records_failures_and_rolls(self):
+        route.route("x", log_path=self.log, post=mock.Mock(side_effect=TimeoutError("slow")))
+        path = self.log.parent / route.REQUESTS_NAME
+        exchange = json.loads(path.read_text())
+        self.assertIn("TimeoutError", exchange["error"])
+        self.assertIsNone(exchange["decision"])
+        path.write_text("".join(f'{{"n": {i}}}\n' for i in range(route.REQUESTS_TRIM_AT)))
+        route.route("x", log_path=self.log, post=mock.Mock(return_value={"answers": answers(1, 1)}))
+        lines = path.read_text().splitlines()
+        self.assertEqual(len(lines), route.REQUESTS_KEEP)
+        self.assertEqual(json.loads(lines[-1])["decision"], "haiku")
+
     def test_service_failure_falls_back(self):
         for exc in (urllib.error.URLError("down"), TimeoutError(), ValueError("bad json")):
             result = route.route("x", log_path=self.log, post=mock.Mock(side_effect=exc))
