@@ -127,6 +127,60 @@ class HookTest(unittest.TestCase):
             self.assertEqual(self.run_hook(event, routed)[:2], (0, ""))
 
 
+class PromptHookTest(unittest.TestCase):
+    OPUS = {"model": "opus", "routed": True, "why": ["deep reasoning"]}
+
+    def run_hook(self, prompt, scores, base=None, env=None, transcript=None):
+        result = {**(base or self.OPUS), "scores": scores}
+        event = {"prompt": prompt, "session_id": "s", "cwd": "/nonexistent",
+                 "transcript_path": transcript}
+        out = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps(event))), \
+                mock.patch.dict("os.environ", env or {}), \
+                mock.patch.object(route, "route", return_value=result) as r, \
+                redirect_stdout(out):
+            self.assertEqual(route.prompt_hook(), 0)
+        return out.getvalue(), r
+
+    def test_delegates_standalone_work_above_the_driver(self):
+        out, r = self.run_hook("plan the dispute", {"needs_conversation": 0.1, "is_conversation": 0.05})
+        context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn('model "opus"', context)
+        self.assertEqual(r.call_args.kwargs["log_fields"]["kind"], "prompt")
+
+    def test_driver_keeps_the_rest(self):
+        standalone = {"needs_conversation": 0.1, "is_conversation": 0.05}
+        sonnet = {"model": "sonnet", "routed": True, "why": []}
+        for scores, base, env in (
+                ({"needs_conversation": 0.9, "is_conversation": 0.05}, None, None),  # "yes, both"
+                ({"needs_conversation": 0.1, "is_conversation": 0.9}, None, None),   # "thanks"
+                (standalone, sonnet, None),                       # at the driver's tier
+                (standalone, None, {"LIFEPROJ_DRIVER": "opus"}),  # driver already opus
+                ({}, {"model": "sonnet", "routed": False, "why": []}, None),  # Jev unreachable
+        ):
+            self.assertEqual(self.run_hook("x", scores, base, env)[0], "")
+
+    def test_slash_commands_never_reach_jev(self):
+        out, r = self.run_hook("/wip", {})
+        r.assert_not_called()
+        self.assertEqual(out, "")
+
+    def test_previous_reply_is_last_main_session_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "t.jsonl"
+            rows = [
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": "first"}]}},
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": "file both?"}]}},
+                {"type": "assistant", "isSidechain": True,
+                 "message": {"content": [{"type": "text", "text": "subagent chatter"}]}},
+                {"type": "assistant", "message": {"content": [{"type": "tool_use"}]}},
+                {"type": "user", "message": {"content": "yes"}},
+            ]
+            path.write_text("\n".join(json.dumps(r) for r in rows) + "\nnot json\n")
+            self.assertEqual(route._previous_reply(str(path)), "file both?")
+        self.assertIsNone(route._previous_reply(None))
+
+
 class CliTest(unittest.TestCase):
     def test_prints_bare_model_on_stdout(self):
         fake = {"model": "opus", "routed": True, "why": ["deep reasoning"], "scores": {}}

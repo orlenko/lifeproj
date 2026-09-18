@@ -7,7 +7,7 @@
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
     lifeproj equip [<name> ...] [--force] [--dry-run]
-    lifeproj route [<task> | -] [--domain <d>] [--json] | --hook
+    lifeproj route [<task> | -] [--domain <d>] [--json] | --hook | --prompt-hook
 """
 
 from __future__ import annotations
@@ -237,6 +237,8 @@ def cmd_route(args) -> int:
     log = Path(args.log).expanduser() if args.log else None
     if args.hook:
         return route.hook(log_path=log)
+    if args.prompt_hook:
+        return route.prompt_hook(log_path=log)
     return route.main(args.task, domain=args.domain, as_json=args.json, log_path=log)
 
 
@@ -328,6 +330,9 @@ def build_parser() -> argparse.ArgumentParser:
     ro.add_argument("--json", action="store_true", help="print the decision with scores and reasons")
     ro.add_argument("--hook", action="store_true",
                     help="run as a Claude Code PreToolUse hook: rewrite the spawn's model")
+    ro.add_argument("--prompt-hook", action="store_true",
+                    help="run as a Claude Code UserPromptSubmit hook: tell the driver to "
+                         "delegate prompts scored above its tier ($LIFEPROJ_DRIVER, default sonnet)")
     ro.add_argument("--log", help="decision log path (default: ~/.local/share/lifeproj/route-log.jsonl)")
     ro.set_defaults(func=cmd_route)
     return p

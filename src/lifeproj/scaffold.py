@@ -92,9 +92,9 @@ def build(name: str, working_dir: Path, encrypted_dir: Path, *, domain: str,
         # skill. Keep copies in both agents' canonical repo-skill locations.
         ".agents/skills/humanize/SKILL.md": templates.data("skills/humanize/SKILL.md"),
         ".claude/skills/humanize/SKILL.md": templates.data("skills/humanize/SKILL.md"),
-        # Spine hook: subagent spawns get their model from `lifeproj route`.
-        equip.ROUTE_SETTINGS_REL: json.dumps(
-            {"hooks": {"PreToolUse": [equip.ROUTE_HOOK]}}, indent=2) + "\n",
+        # Spine hooks: `lifeproj route` picks each subagent's model, and tells
+        # the driver to delegate prompts scored above its own tier.
+        equip.ROUTE_SETTINGS_REL: equip.route_settings(),
     }
     dirs = ["intake", "scripts"]
     for m in mods:

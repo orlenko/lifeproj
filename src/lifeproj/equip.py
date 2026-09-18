@@ -59,33 +59,46 @@ def _install_agents_bridge(wd: Path, *, dry_run: bool) -> tuple[str, str]:
 
 ROUTE_SETTINGS_REL = ".claude/settings.json"
 ROUTE_HOOK_COMMAND = "lifeproj route --hook"
-ROUTE_HOOK = {"matcher": "Agent",
-              "hooks": [{"type": "command", "command": ROUTE_HOOK_COMMAND, "timeout": 20}]}
+ROUTE_PROMPT_HOOK_COMMAND = "lifeproj route --prompt-hook"
+# event -> the entry equip keeps present under settings.hooks[event]
+ROUTE_HOOKS = {
+    "PreToolUse": {"matcher": "Agent", "hooks": [
+        {"type": "command", "command": ROUTE_HOOK_COMMAND, "timeout": 20}]},
+    "UserPromptSubmit": {"hooks": [
+        {"type": "command", "command": ROUTE_PROMPT_HOOK_COMMAND, "timeout": 20}]},
+}
+
+
+def route_settings() -> str:
+    """The settings file a fresh teka is stamped with."""
+    return json.dumps({"hooks": {ev: [entry] for ev, entry in ROUTE_HOOKS.items()}},
+                      indent=2) + "\n"
 
 
 def _install_route_hook(wd: Path, *, dry_run: bool) -> tuple[str, str]:
-    """Merge the subagent model-routing hook into the teka's shared Claude
-    settings. Every other key is kept; a file that isn't valid JSON is left
-    alone and reported."""
+    """Merge the model-routing hooks into the teka's shared Claude settings.
+    Every other key is kept; a file that isn't valid JSON is left alone and
+    reported."""
     target = wd / ROUTE_SETTINGS_REL
-    settings = {}
-    if target.exists():
-        try:
-            settings = json.loads(target.read_text())
-            pre = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
-            if not isinstance(pre, list):
+    try:
+        settings = json.loads(target.read_text()) if target.exists() else {}
+        hooks = settings.setdefault("hooks", {})
+        added = []
+        for event, entry in ROUTE_HOOKS.items():
+            entries = hooks.setdefault(event, [])
+            if not isinstance(entries, list):
                 raise ValueError
-        except (ValueError, AttributeError):
-            return ROUTE_SETTINGS_REL, "unreadable (kept; add the route hook by hand)"
-    else:
-        pre = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    if ROUTE_HOOK_COMMAND in json.dumps(pre):
+            if entry["hooks"][0]["command"] not in json.dumps(entries):
+                entries.append(entry)
+                added.append(event)
+    except (ValueError, AttributeError, TypeError):
+        return ROUTE_SETTINGS_REL, "unreadable (kept; add the route hooks by hand)"
+    if not added:
         return ROUTE_SETTINGS_REL, "current"
-    pre.append(ROUTE_HOOK)
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(settings, indent=2) + "\n")
-    return ROUTE_SETTINGS_REL, "route hook installed"
+    return ROUTE_SETTINGS_REL, f"route hook installed ({', '.join(added)})"
 
 
 def _append_to_section(claude: Path, headings, block: str, *, dry_run: bool) -> bool:
