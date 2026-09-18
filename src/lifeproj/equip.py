@@ -20,6 +20,7 @@ the missing text is printed for a human (or the teka's own session) to paste.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -54,6 +55,37 @@ def _install_agents_bridge(wd: Path, *, dry_run: bool) -> tuple[str, str]:
     if target.read_text() == templates.AGENTS_BRIDGE:
         return "AGENTS.md", "current"
     return "AGENTS.md", "differs (kept; living instructions are never overwritten)"
+
+
+ROUTE_SETTINGS_REL = ".claude/settings.json"
+ROUTE_HOOK_COMMAND = "lifeproj route --hook"
+ROUTE_HOOK = {"matcher": "Agent",
+              "hooks": [{"type": "command", "command": ROUTE_HOOK_COMMAND, "timeout": 20}]}
+
+
+def _install_route_hook(wd: Path, *, dry_run: bool) -> tuple[str, str]:
+    """Merge the subagent model-routing hook into the teka's shared Claude
+    settings. Every other key is kept; a file that isn't valid JSON is left
+    alone and reported."""
+    target = wd / ROUTE_SETTINGS_REL
+    settings = {}
+    if target.exists():
+        try:
+            settings = json.loads(target.read_text())
+            pre = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
+            if not isinstance(pre, list):
+                raise ValueError
+        except (ValueError, AttributeError):
+            return ROUTE_SETTINGS_REL, "unreadable (kept; add the route hook by hand)"
+    else:
+        pre = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    if ROUTE_HOOK_COMMAND in json.dumps(pre):
+        return ROUTE_SETTINGS_REL, "current"
+    pre.append(ROUTE_HOOK)
+    if not dry_run:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(settings, indent=2) + "\n")
+    return ROUTE_SETTINGS_REL, "route hook installed"
 
 
 def _append_to_section(claude: Path, headings, block: str, *, dry_run: bool) -> bool:
@@ -145,6 +177,8 @@ def equip_teka(wd: Path, *, force: bool = False, dry_run: bool = False) -> dict:
         else:
             action = "differs (kept; --force overwrites)"
         entry["actions"].append((relpath, action))
+
+    entry["actions"].append(_install_route_hook(wd, dry_run=dry_run))
 
     claude = wd / "CLAUDE.md"
     if claude.exists() and ".claude/skills/humanize" not in claude.read_text():

@@ -81,7 +81,9 @@ CLAUDE_HEADER = """\
   from prior outgoing mail in `correspondence/` where it exists.
 - **Privacy posture.** Teka files stay local; off-machine durability is the
   *encrypted* cmirror backup. Do not paste teka contents into web tools or
-  unrelated external services.
+  unrelated external services. The model session itself and TypeSafe's Jev API
+  (called by teka scripts for typed judgments, e.g. `lifeproj route`) are the
+  accepted exceptions.
 - **Validate state.** Run `python3 catalog_check.py` after editing `catalog.json`.
 
 ## Open items — the task schema (kept current, every digest)

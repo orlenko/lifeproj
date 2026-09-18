@@ -203,9 +203,14 @@ place you can decrypt it. One secret to guard; everything else self-restoring.
 
 Work happens in local Codex or Claude Code sessions, not cloud-hosted workspaces.
 The accepted interactive exposure ceiling is content included in the active
-model session (OpenAI or Anthropic). Outside that session, the only off-machine
-copy is the **encrypted** age backup. Raw teka contents are never pasted into web
-tools or unrelated external services.
+model session (OpenAI or Anthropic). TypeSafe's Jev API (`api.typesafe.ai`) sits
+under the same ceiling: teka scripts may send it task descriptions and raw teka
+content (an email body, a document excerpt) to get typed judgments back — model
+routing (`lifeproj route`), filing, priority, duplicate checks. It is a model
+endpoint called by our own code, the same kind of exposure as the session
+itself. Outside those, the only off-machine copy is the **encrypted** age
+backup. Raw teka contents are never pasted into web tools or unrelated external
+services.
 
 ## 9. Naming
 
