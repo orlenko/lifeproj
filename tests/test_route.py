@@ -10,9 +10,10 @@ from unittest import mock
 from lifeproj import cli, route
 
 
-def answers(depth, cost, prose=0.0, code=0.0, depth_conf=0.9):
+def answers(depth, cost, prose=0.0, code=0.0, depth_conf=0.9, levels=None):
     return {
-        "reasoning_depth": {"type": "score", "score": depth, "confidence": depth_conf},
+        "reasoning_depth": {"type": "score", "score": depth, "confidence": depth_conf,
+                            "probabilities": levels or {}},
         "error_cost": {"type": "score", "score": cost, "confidence": 0.8},
         "writes_for_human": {"type": "noul", "noul": prose},
         "is_code": {"type": "noul", "noul": code},
@@ -31,12 +32,22 @@ class DecideTest(unittest.TestCase):
         self.assertEqual(self.tier(3.0, 1.6, code=0.9), "opus")
         self.assertEqual(self.tier(3.0, 2.75), "fable")
 
-    def test_low_depth_confidence_bumps_one_tier(self):
-        tier, why = route.decide(answers(1.2, 1.2, depth_conf=0.4))
-        self.assertEqual(tier, "sonnet")
-        self.assertIn("bumped", why[-1])
-        # never bumps past opus on uncertainty alone
-        self.assertEqual(self.tier(3.0, 1.0, depth_conf=0.3), "opus")
+    def test_bump_follows_the_distribution_not_the_confidence(self):
+        # Live, 2026-09-18: a one-word edit to an outbound draft. Split between
+        # mechanical and moderate (confidence 0.30), nothing on deep. Prose makes
+        # it sonnet; low confidence alone must not make it opus.
+        edit = answers(0.70, 1.13, prose=0.56, depth_conf=0.30,
+                       levels={"0": 0.57, "1": 0.16, "2": 0.27, "3": 0.00})
+        self.assertEqual(route.decide(edit)[0], "sonnet")
+        # Real weight on "deep" does bump sonnet to opus …
+        tier, why = route.decide(answers(1.9, 1.0, levels={"1": 0.4, "2": 0.3, "3": 0.3}))
+        self.assertEqual(tier, "opus")
+        self.assertIn("bumped to opus", why[-1])
+        # … and weight on moderate-or-deep bumps haiku to sonnet.
+        self.assertEqual(route.decide(answers(1.2, 1.0, levels={"0": 0.3, "1": 0.3, "2": 0.4}))[0],
+                         "sonnet")
+        self.assertEqual(route.decide(answers(1.2, 1.0, depth_conf=0.2,
+                                              levels={"0": 0.45, "1": 0.45, "2": 0.1}))[0], "haiku")
 
 
 class BuildRequestTest(unittest.TestCase):
