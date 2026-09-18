@@ -81,7 +81,8 @@ class RouteTest(unittest.TestCase):
                  "usage": {"input_tokens": 600, "output_tokens": 40}}
         route.route("plan the filing", log_path=self.log, post=mock.Mock(return_value=reply),
                     extra_state={"previous_assistant_reply": "file both?"},
-                    log_fields={"kind": "prompt", "session": "s1"})
+                    log_fields={"kind": "prompt", "session": "s1"},
+                    annotate=lambda r: {"delegate": True})
         decision = json.loads(self.log.read_text())
         exchange = json.loads((self.log.parent / route.REQUESTS_NAME).read_text())
         self.assertEqual(exchange["at"], decision["at"])
@@ -90,6 +91,7 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(exchange["request"]["questions"], route.QUESTIONS)
         self.assertEqual(exchange["response"], reply)
         self.assertEqual(exchange["decision"], "fable")
+        self.assertIs(exchange["delegate"], True)
         self.assertNotIn("k", json.dumps(exchange["request"]).split())  # no api key in the body
 
     def test_request_log_records_failures_and_rolls(self):

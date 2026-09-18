@@ -227,6 +227,7 @@ def route(description: str, *, domain: Optional[str] = None,
             exchange["error"] = f"{type(exc).__name__}: {exc}"
         exchange["ms"] = round((datetime.datetime.now() - started).total_seconds() * 1000)
         exchange["decision"] = result["model"] if result["routed"] else None
+        exchange.update(annotate(result) if annotate else {})
         _log_request(exchange, log_path)
 
     _log({"at": at,
