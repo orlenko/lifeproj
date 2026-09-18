@@ -342,7 +342,11 @@ PROMPT_QUESTIONS = {
 NEEDS_CONVERSATION = 0.4    # at or above: the driver must write the context into the brief
 CONVERSATION = 0.4          # at or above: the driver keeps it
 DEFAULT_DRIVER = "sonnet"
-HARNESS_PREFIXES = ("/", "<task-notification", "<system-reminder", "<local-command")
+HARNESS_PREFIXES = ("/", "<task-notification", "<system-reminder", "<local-command",
+                    # aiq's resume note after a quota-account switch: "continue where
+                    # the last session stopped" is an order to the driver, which holds
+                    # that context. Handing it to a cold subagent is the wrong move.
+                    "aiq moved this session")
 MAX_PREVIOUS_REPLY_CHARS = 1500
 
 DELEGATE_TMPL = """\

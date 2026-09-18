@@ -239,7 +239,8 @@ class PromptHookTest(unittest.TestCase):
 
     def test_slash_commands_and_harness_events_never_reach_jev(self):
         for prompt in ("/wip", "<task-notification> <task-id>b1</task-id> …",
-                       "  <system-reminder>x</system-reminder>"):
+                       "  <system-reminder>x</system-reminder>",
+                       "aiq moved this session to a fresh quota account; the conversation …"):
             out, r = self.run_hook(prompt, {})
             r.assert_not_called()
             self.assertEqual(out, "")
