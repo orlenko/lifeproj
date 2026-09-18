@@ -324,19 +324,22 @@ PROMPT_QUESTIONS = {
     },
     "is_conversation": {
         "type": "noul",
-        "instructions": "Is `task.description` conversation with the assistant "
-                        "rather than a request to carry out work?",
+        "instructions": "Can `task.description` be fully dealt with by a short "
+                        "conversational reply, with no analysis, file reading or "
+                        "other work?",
         "criteria": {
-            "true": "Thanks, a greeting, a comment, a decision between options the "
-                    "assistant offered, or a question about what the assistant "
-                    "just did or said",
+            "true": "Thanks, a greeting, an acknowledgement, a remark that needs no "
+                    "action, picking one of the options the assistant just offered, "
+                    "or asking the assistant to repeat or explain what it just did",
             "false": "A request to find, check, read, file, draft, plan, fix or "
-                     "change something",
+                     "change something — or a question asking for advice, a "
+                     "recommendation, or what to do next, which needs the situation "
+                     "to be analysed before it can be answered",
         },
     },
 }
 
-NEEDS_CONVERSATION = 0.4    # at or above: a cold subagent would lack context
+NEEDS_CONVERSATION = 0.4    # at or above: the driver must write the context into the brief
 CONVERSATION = 0.4          # at or above: the driver keeps it
 DEFAULT_DRIVER = "sonnet"
 HARNESS_PREFIXES = ("/", "<task-notification", "<system-reminder", "<local-command")
@@ -348,6 +351,18 @@ Do not carry it out yourself. Spawn one subagent with the Agent tool, \
 model "{model}", and give it the user's prompt verbatim as its task, plus any \
 file paths or facts from this conversation it would need. When it returns, \
 check its result against the teka's working rules and report to the user."""
+
+
+# The prompt leans on the conversation ("those three drafts"), so passing it
+# verbatim would strand the subagent. The driver holds the context; it writes it.
+DELEGATE_WITH_CONTEXT_TMPL = """\
+ROUTER (lifeproj route): this prompt was scored as {model}-level work ({why}). \
+Do not carry it out yourself. Spawn one subagent with the Agent tool, \
+model "{model}". The prompt refers back to this conversation, so write the \
+subagent a self-contained brief: quote the user's prompt, name every file, \
+item and fact it refers to, say what has already been done and checked, and \
+say what must not be touched. When it returns, check its result against the \
+teka's working rules and report to the user."""
 
 
 def _previous_reply(transcript_path: Optional[str]) -> Optional[str]:
@@ -374,10 +389,11 @@ def _previous_reply(transcript_path: Optional[str]) -> Optional[str]:
 
 def should_delegate(result: dict, driver: str) -> bool:
     """Only upward: a spawn starts a fresh context, which costs more than the
-    driver answering something at or below its own tier."""
+    driver answering something at or below its own tier. Leaning on the
+    conversation does not keep work with the driver — it changes the
+    instruction (see `prompt_hook`)."""
     scores = result["scores"]
     return (bool(result["routed"])
-            and scores["needs_conversation"] < NEEDS_CONVERSATION
             and scores["is_conversation"] < CONVERSATION
             and TIERS.index(result["model"]) > TIERS.index(driver))
 
@@ -408,8 +424,10 @@ def prompt_hook(log_path: Optional[Path] = None) -> int:
         return 0
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "UserPromptSubmit",
-        "additionalContext": DELEGATE_TMPL.format(model=result["model"],
-                                                  why="; ".join(result["why"])),
+        "additionalContext": (
+            DELEGATE_WITH_CONTEXT_TMPL
+            if result["scores"]["needs_conversation"] >= NEEDS_CONVERSATION
+            else DELEGATE_TMPL).format(model=result["model"], why="; ".join(result["why"])),
     }}))
     return 0
 

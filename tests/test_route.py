@@ -218,11 +218,18 @@ class PromptHookTest(unittest.TestCase):
         self.assertIn('model "opus"', context)
         self.assertEqual(r.call_args.kwargs["log_fields"]["kind"], "prompt")
 
+    def test_context_dependent_work_is_delegated_with_a_brief(self):
+        # Live, 2026-09-18: "those three drafts are still valid in light of latest intake?"
+        out, _ = self.run_hook("those three drafts…", {"needs_conversation": 0.83, "is_conversation": 0.1})
+        context = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("self-contained brief", context)
+        self.assertNotIn("verbatim", context)
+
     def test_driver_keeps_the_rest(self):
         standalone = {"needs_conversation": 0.1, "is_conversation": 0.05}
         sonnet = {"model": "sonnet", "routed": True, "why": []}
         for scores, base, env in (
-                ({"needs_conversation": 0.9, "is_conversation": 0.05}, None, None),  # "yes, both"
+                ({"needs_conversation": 0.9, "is_conversation": 0.9}, None, None),   # "yes, both"
                 ({"needs_conversation": 0.1, "is_conversation": 0.9}, None, None),   # "thanks"
                 (standalone, sonnet, None),                       # at the driver's tier
                 (standalone, None, {"LIFEPROJ_DRIVER": "opus"}),  # driver already opus
