@@ -83,11 +83,27 @@ class EquipTests(unittest.TestCase):
                 "permissions": {"allow": ["Bash(ls:*)"]},
                 "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": []}]}}))
             entry = equip.equip_teka(wd)
-            self.assertIn((equip.ROUTE_SETTINGS_REL, "route hook installed"), entry["actions"])
+            self.assertIn((equip.ROUTE_SETTINGS_REL,
+                           "route hook installed (PreToolUse, UserPromptSubmit)"),
+                          entry["actions"])
             merged = json.loads(settings.read_text())
             self.assertEqual(merged["permissions"], {"allow": ["Bash(ls:*)"]})
             self.assertEqual([h["matcher"] for h in merged["hooks"]["PreToolUse"]],
                              ["Bash", "Agent"])
+            self.assertIn(equip.ROUTE_PROMPT_HOOK_COMMAND,
+                          json.dumps(merged["hooks"]["UserPromptSubmit"]))
+
+    def test_route_hook_upgrade_adds_only_the_missing_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp)
+            settings = wd / equip.ROUTE_SETTINGS_REL
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps(
+                {"hooks": {"PreToolUse": [equip.ROUTE_HOOKS["PreToolUse"]]}}))
+            entry = equip.equip_teka(wd)
+            self.assertIn((equip.ROUTE_SETTINGS_REL, "route hook installed (UserPromptSubmit)"),
+                          entry["actions"])
+            self.assertEqual(len(json.loads(settings.read_text())["hooks"]["PreToolUse"]), 1)
 
     def test_route_hook_leaves_broken_settings_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
