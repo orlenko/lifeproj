@@ -190,10 +190,12 @@ class PromptHookTest(unittest.TestCase):
         ):
             self.assertEqual(self.run_hook("x", scores, base, env)[0], "")
 
-    def test_slash_commands_never_reach_jev(self):
-        out, r = self.run_hook("/wip", {})
-        r.assert_not_called()
-        self.assertEqual(out, "")
+    def test_slash_commands_and_harness_events_never_reach_jev(self):
+        for prompt in ("/wip", "<task-notification> <task-id>b1</task-id> …",
+                       "  <system-reminder>x</system-reminder>"):
+            out, r = self.run_hook(prompt, {})
+            r.assert_not_called()
+            self.assertEqual(out, "")
 
     def test_previous_reply_is_last_main_session_text(self):
         with tempfile.TemporaryDirectory() as tmp:

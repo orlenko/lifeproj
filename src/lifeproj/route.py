@@ -297,6 +297,7 @@ PROMPT_QUESTIONS = {
 NEEDS_CONVERSATION = 0.4    # at or above: a cold subagent would lack context
 CONVERSATION = 0.4          # at or above: the driver keeps it
 DEFAULT_DRIVER = "sonnet"
+HARNESS_PREFIXES = ("/", "<task-notification", "<system-reminder", "<local-command")
 MAX_PREVIOUS_REPLY_CHARS = 1500
 
 DELEGATE_TMPL = """\
@@ -346,7 +347,9 @@ def prompt_hook(log_path: Optional[Path] = None) -> int:
     try:
         event = json.load(sys.stdin)
         prompt = event["prompt"]
-        if not prompt.strip() or prompt.lstrip().startswith("/"):
+        # Slash commands, and events the harness submits as prompts (a finished
+        # background task, a monitor firing), are not requests from the user.
+        if not prompt.strip() or prompt.lstrip().startswith(HARNESS_PREFIXES):
             return 0
     except (ValueError, KeyError, TypeError, AttributeError):
         return 0
