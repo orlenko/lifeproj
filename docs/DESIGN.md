@@ -203,9 +203,14 @@ place you can decrypt it. One secret to guard; everything else self-restoring.
 
 Work happens in local Codex or Claude Code sessions, not cloud-hosted workspaces.
 The accepted interactive exposure ceiling is content included in the active
-model session (OpenAI or Anthropic). Outside that session, the only off-machine
-copy is the **encrypted** age backup. Raw teka contents are never pasted into web
-tools or unrelated external services.
+model session (OpenAI or Anthropic). TypeSafe's Jev API (`api.typesafe.ai`) sits
+under the same ceiling: teka scripts may send it task descriptions and raw teka
+content (an email body, a document excerpt) to get typed judgments back — model
+routing (`lifeproj route`), filing, priority, duplicate checks. It is a model
+endpoint called by our own code, the same kind of exposure as the session
+itself. Outside those, the only off-machine copy is the **encrypted** age
+backup. Raw teka contents are never pasted into web tools or unrelated external
+services.
 
 ## 9. Naming
 
@@ -244,14 +249,15 @@ lifeproj's.
 **The spool** — `~/.local/share/osavul/`, a sibling of the already-granted
 `undrudge/` spool. The session's sandbox profile must grant it — one
 `"$HOME/.local/share/osavul"` line — and that grant deliberately does **not**
-live in the shared teka profile. It rides in a dedicated profile reached through
-the `osavul-claude` launcher alias, so the base teka profile stays minimal and
-the spool is reachable only from sessions that actually publish. (Narrower still
-is possible: grant just `inbox/` + `outbox/`, keeping Osavul's merged `state/`
-unreadable to spokes.) A teka session started without that alias therefore hits
-the no-op path by design — publish/drain print a one-line hint rather than
-failing the digest — so an absent grant is a launch choice, not a
-misconfiguration to go fix:
+live in either shared teka profile. It rides in dedicated extension profiles
+reached through the `osavul-claude` and `osavul-codex` launcher aliases, so the
+base `safe-claude` and `safe-codex` profiles stay minimal and the spool is
+reachable only from sessions that actually publish. (Narrower still is possible:
+grant just `inbox/` + `outbox/`, keeping Osavul's merged `state/` unreadable to
+spokes.) A teka session started without the matching alias therefore hits the
+no-op path by design — publish/drain print a one-line hint rather than failing
+the digest — so an absent grant is a launch choice, not a misconfiguration to go
+fix:
 
 ```
 inbox/   <teka>.agenda.json   each teka WRITES its slice; Osavul READS all

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from lifeproj import intake, registry, templates
+from lifeproj import equip, intake, registry, templates
 from lifeproj.modules import OVERLAYS, Module, resolve
 
 
@@ -92,6 +92,9 @@ def build(name: str, working_dir: Path, encrypted_dir: Path, *, domain: str,
         # skill. Keep copies in both agents' canonical repo-skill locations.
         ".agents/skills/humanize/SKILL.md": templates.data("skills/humanize/SKILL.md"),
         ".claude/skills/humanize/SKILL.md": templates.data("skills/humanize/SKILL.md"),
+        # Spine hook: subagent spawns get their model from `lifeproj route`.
+        equip.ROUTE_SETTINGS_REL: json.dumps(
+            {"hooks": {"PreToolUse": [equip.ROUTE_HOOK]}}, indent=2) + "\n",
     }
     dirs = ["intake", "scripts"]
     for m in mods:

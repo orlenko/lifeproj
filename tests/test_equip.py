@@ -1,3 +1,4 @@
+import json
 import shutil
 import tempfile
 import unittest
@@ -69,8 +70,34 @@ class EquipTests(unittest.TestCase):
                 ("AGENTS.md", "current"),
                 (CODEX_SKILL_REL, "current"),
                 (CLAUDE_SKILL_REL, "current"),
+                (equip.ROUTE_SETTINGS_REL, "current"),
             ])
             self.assertEqual(claude, (wd / "CLAUDE.md").read_text())
+
+    def test_route_hook_merges_into_existing_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp)
+            settings = wd / equip.ROUTE_SETTINGS_REL
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps({
+                "permissions": {"allow": ["Bash(ls:*)"]},
+                "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": []}]}}))
+            entry = equip.equip_teka(wd)
+            self.assertIn((equip.ROUTE_SETTINGS_REL, "route hook installed"), entry["actions"])
+            merged = json.loads(settings.read_text())
+            self.assertEqual(merged["permissions"], {"allow": ["Bash(ls:*)"]})
+            self.assertEqual([h["matcher"] for h in merged["hooks"]["PreToolUse"]],
+                             ["Bash", "Agent"])
+
+    def test_route_hook_leaves_broken_settings_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            wd = self._teka(tmp)
+            settings = wd / equip.ROUTE_SETTINGS_REL
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text("{not json")
+            entry = equip.equip_teka(wd)
+            self.assertIn("unreadable", dict(entry["actions"])[equip.ROUTE_SETTINGS_REL])
+            self.assertEqual(settings.read_text(), "{not json")
 
     def test_customized_claude_without_anchor_gets_hint(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -202,6 +229,7 @@ class EquipTests(unittest.TestCase):
                 ("AGENTS.md", "current"),
                 (CODEX_SKILL_REL, "current"),
                 (CLAUDE_SKILL_REL, "current"),
+                (equip.ROUTE_SETTINGS_REL, "current"),
             ])
             self.assertFalse(entry["claude_hint"])
             self.assertFalse(entry["osavul_hint"])

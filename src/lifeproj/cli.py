@@ -7,6 +7,7 @@
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
     lifeproj equip [<name> ...] [--force] [--dry-run]
+    lifeproj route [<task> | -] [--domain <d>] [--json] | --hook
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import sys
 from pathlib import Path
 
 from lifeproj import (__version__, archive, brief, equip, osavul, overview,
-                      registry, scaffold, templates)
+                      registry, route, scaffold, templates)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -232,6 +233,13 @@ def cmd_drain(args) -> int:
     return osavul.drain(Path(args.path).expanduser() if args.path else None)
 
 
+def cmd_route(args) -> int:
+    log = Path(args.log).expanduser() if args.log else None
+    if args.hook:
+        return route.hook(log_path=log)
+    return route.main(args.task, domain=args.domain, as_json=args.json, log_path=log)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="lifeproj", description="Orchestrate local, agent-maintained tekas with encrypted backups.")
     p.add_argument("--version", action="version", version=f"lifeproj {__version__}")
@@ -313,6 +321,15 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--json", action="store_true", help="with --all: emit a structured JSON array")
     dr.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
     dr.set_defaults(func=cmd_drain)
+
+    ro = sub.add_parser("route", help="pick the subagent model (haiku/sonnet/opus/fable) for one task")
+    ro.add_argument("task", nargs="?", help="task description; omit or '-' to read stdin")
+    ro.add_argument("--domain", help="the teka's domain, as extra context for the judgment")
+    ro.add_argument("--json", action="store_true", help="print the decision with scores and reasons")
+    ro.add_argument("--hook", action="store_true",
+                    help="run as a Claude Code PreToolUse hook: rewrite the spawn's model")
+    ro.add_argument("--log", help="decision log path (default: ~/.local/share/lifeproj/route-log.jsonl)")
+    ro.set_defaults(func=cmd_route)
     return p
 
 
