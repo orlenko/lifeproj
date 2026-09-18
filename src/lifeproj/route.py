@@ -86,7 +86,12 @@ MODERATE = 1.75     # ... and this needs sonnet
 COSTLY = 2.25       # error_cost at or above this raises the floor
 SEVERE = 2.5        # with DEEP, this is a fable task
 PROSE = 0.5
-UNSURE = 0.5        # depth confidence below this bumps one tier
+# A split depth judgment bumps one tier only when real probability sits on
+# levels the chosen tier is too small for. (Confidence alone is the wrong
+# signal: a split between "mechanical" and "moderate" is low-confidence and
+# still nowhere near opus.)
+BUMP_TO_SONNET = 0.35   # haiku → sonnet when P(moderate or deep) reaches this
+BUMP_TO_OPUS = 0.25     # sonnet → opus when P(deep) reaches this
 
 
 def clip(text: str, limit: int = MAX_DESCRIPTION_CHARS) -> str:
@@ -115,7 +120,6 @@ def build_request(description: str, *, domain: Optional[str] = None,
 def decide(answers: dict) -> tuple[str, list]:
     """Map Jev's answers to a tier. Pure; raises KeyError on a malformed reply."""
     depth = answers["reasoning_depth"]["score"]
-    depth_conf = answers["reasoning_depth"]["confidence"]
     cost = answers["error_cost"]["score"]
     prose = answers["writes_for_human"]["noul"]
 
@@ -130,9 +134,15 @@ def decide(answers: dict) -> tuple[str, list]:
     else:
         tier, why = "haiku", ["mechanical or light judgment, cheap to get wrong"]
 
-    if depth_conf < UNSURE and tier in ("haiku", "sonnet"):
-        tier = TIERS[TIERS.index(tier) + 1]
-        why.append(f"depth confidence {depth_conf:.2f} < {UNSURE}: bumped one tier")
+    levels = answers["reasoning_depth"].get("probabilities") or {}
+    p_deep = levels.get("3", 0.0)
+    p_moderate_up = p_deep + levels.get("2", 0.0)
+    if tier == "haiku" and p_moderate_up >= BUMP_TO_SONNET:
+        tier = "sonnet"
+        why.append(f"P(moderate or deep) {p_moderate_up:.2f} ≥ {BUMP_TO_SONNET}: bumped to sonnet")
+    elif tier == "sonnet" and p_deep >= BUMP_TO_OPUS:
+        tier = "opus"
+        why.append(f"P(deep) {p_deep:.2f} ≥ {BUMP_TO_OPUS}: bumped to opus")
     return tier, why
 
 
