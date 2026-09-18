@@ -149,6 +149,33 @@ def default_log_path() -> Path:
     return Path.home() / ".local" / "share" / "lifeproj" / "route-log.jsonl"
 
 
+REQUESTS_NAME = "route-requests.jsonl"
+# The request log holds full prompt text, so it is a rolling window, not an
+# archive: once it passes REQUESTS_TRIM_AT lines it is cut back to REQUESTS_KEEP.
+REQUESTS_KEEP = 500
+REQUESTS_TRIM_AT = 600
+
+
+def _log_request(entry: dict, log_path: Optional[Path]) -> None:
+    """While Jev is under evaluation: the exact body sent and the raw reply (or
+    the error), next to the decision log and joined to it by ``at``. Best-effort
+    like `_log`."""
+    try:
+        path = (log_path or default_log_path()).with_name(REQUESTS_NAME)
+        if str(log_path) == os.devnull:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        lines = path.read_text().splitlines(keepends=True)
+        if len(lines) > REQUESTS_TRIM_AT:
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text("".join(lines[-REQUESTS_KEEP:]))
+            tmp.replace(path)
+    except OSError:
+        pass
+
+
 def _log(entry: dict, path: Optional[Path]) -> None:
     """Best-effort: a sandboxed session may not be able to write here."""
     try:
@@ -169,16 +196,20 @@ def route(description: str, *, domain: Optional[str] = None,
     """Decide a tier for one task. Never raises for service trouble. Nouls asked
     through ``extra_questions`` come back in ``scores`` under their ids."""
     result = {"model": FALLBACK, "routed": False, "why": [], "scores": {}}
+    at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     api_key = os.environ.get("TYPESAFE_API_KEY")
     if not description.strip():
         result["why"] = ["empty task description"]
     elif not api_key:
         result["why"] = ["TYPESAFE_API_KEY not set"]
     else:
+        body = build_request(description, domain=domain, facts=facts,
+                             extra_state=extra_state, extra_questions=extra_questions)
+        exchange = {"at": at, **(log_fields or {}), "request": body}
+        started = datetime.datetime.now()
         try:
-            reply = post(build_request(description, domain=domain, facts=facts,
-                                       extra_state=extra_state,
-                                       extra_questions=extra_questions), api_key)
+            reply = post(body, api_key)
+            exchange["response"] = reply
             answers = reply["answers"]
             result["model"], result["why"] = decide(answers)
             result["routed"] = True
@@ -193,8 +224,13 @@ def route(description: str, *, domain: Optional[str] = None,
             }
         except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as exc:
             result["why"] = [f"routing failed ({type(exc).__name__}: {exc}); using fallback"]
+            exchange["error"] = f"{type(exc).__name__}: {exc}"
+        exchange["ms"] = round((datetime.datetime.now() - started).total_seconds() * 1000)
+        exchange["decision"] = result["model"] if result["routed"] else None
+        exchange.update(annotate(result) if annotate else {})
+        _log_request(exchange, log_path)
 
-    _log({"at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    _log({"at": at,
           "domain": domain, "description": clip(description, 500), **result,
           **(log_fields or {}), **(annotate(result) if annotate else {})}, log_path)
     return result
@@ -261,6 +297,7 @@ PROMPT_QUESTIONS = {
 NEEDS_CONVERSATION = 0.4    # at or above: a cold subagent would lack context
 CONVERSATION = 0.4          # at or above: the driver keeps it
 DEFAULT_DRIVER = "sonnet"
+HARNESS_PREFIXES = ("/", "<task-notification", "<system-reminder", "<local-command")
 MAX_PREVIOUS_REPLY_CHARS = 1500
 
 DELEGATE_TMPL = """\
@@ -310,7 +347,9 @@ def prompt_hook(log_path: Optional[Path] = None) -> int:
     try:
         event = json.load(sys.stdin)
         prompt = event["prompt"]
-        if not prompt.strip() or prompt.lstrip().startswith("/"):
+        # Slash commands, and events the harness submits as prompts (a finished
+        # background task, a monitor firing), are not requests from the user.
+        if not prompt.strip() or prompt.lstrip().startswith(HARNESS_PREFIXES):
             return 0
     except (ValueError, KeyError, TypeError, AttributeError):
         return 0
