@@ -10,11 +10,14 @@ from unittest import mock
 from lifeproj import cli, route
 
 
-def answers(depth, cost, prose=0.0, code=0.0, depth_conf=0.9, levels=None):
+def answers(depth, cost, prose=0.0, code=0.0, depth_conf=0.9, levels=None,
+            cost_levels=None, care=0.0):
     return {
         "reasoning_depth": {"type": "score", "score": depth, "confidence": depth_conf,
                             "probabilities": levels or {}},
-        "error_cost": {"type": "score", "score": cost, "confidence": 0.8},
+        "error_cost": {"type": "score", "score": cost, "confidence": 0.8,
+                       "probabilities": cost_levels or {}},
+        "asks_for_care": {"type": "noul", "noul": care},
         "writes_for_human": {"type": "noul", "noul": prose},
         "is_code": {"type": "noul", "noul": code},
     }
@@ -48,6 +51,23 @@ class DecideTest(unittest.TestCase):
                          "sonnet")
         self.assertEqual(route.decide(answers(1.2, 1.0, depth_conf=0.2,
                                               levels={"0": 0.45, "1": 0.45, "2": 0.1}))[0], "haiku")
+
+
+    def test_firm_costly_counts_without_weight_on_severe(self):
+        # Live, 2026-09-18: "deep re-read … so I don't send something stupid".
+        # 0.93 on "costly" scores 2.01, under the 2.25 score threshold.
+        reread = answers(2.07, 2.01, prose=0.25, cost_levels={"1": 0.03, "2": 0.93, "3": 0.04})
+        self.assertEqual(route.decide(reread)[0], "opus")
+        self.assertEqual(self.tier(2.07, 2.01, cost_levels={"1": 0.5, "2": 0.5}), "sonnet")
+
+    def test_author_asking_for_care_goes_up_one_tier(self):
+        tier, why = route.decide(answers(2.0, 1.2, care=0.9))
+        self.assertEqual(tier, "opus")
+        self.assertIn("extra care", why[-1])
+        self.assertEqual(self.tier(1.0, 1.0, care=0.9), "sonnet")
+        # "make sure validation passes": careful, costly, but mechanical — sonnet is enough
+        self.assertEqual(self.tier(0.8, 1.75, care=0.9, cost_levels={"2": 0.8}), "sonnet")
+        self.assertEqual(self.tier(3.0, 1.0, care=0.9), "opus")     # never to fable on tone
 
 
 class BuildRequestTest(unittest.TestCase):
@@ -156,6 +176,15 @@ class HookTest(unittest.TestCase):
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"],
                          {"description": "d", "prompt": "p", "subagent_type": "Explore",
                           "model": "haiku"})
+
+    def test_never_lowers_an_explicit_model(self):
+        spawn = {"description": "d", "prompt": "p", "model": "opus"}
+        _, out, _ = self.run_hook({"tool_name": "Agent", "tool_input": spawn},
+                                  {"model": "sonnet", "routed": True})
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["model"], "opus")
+        _, out, _ = self.run_hook({"tool_name": "Agent", "tool_input": {**spawn, "model": "haiku"}},
+                                  {"model": "opus", "routed": True})
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["model"], "opus")
 
     def test_leaves_spawn_alone(self):
         spawn = {"description": "d", "prompt": "p"}
