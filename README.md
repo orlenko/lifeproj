@@ -78,6 +78,11 @@ lifeproj root --rehome
 # New machine or new home folder: repoint every teka's working_dir that isn't on
 # disk here to <home>/<name>, then `cmirror pull --all` fills them in.
 lifeproj home ~/tekas --rehome
+
+# Then bring every missing teka into a working state: create the folder, pull
+# from Drive, refresh spine skills, and rewrite the old machine's paths in code
+# and config (prose is reported, not rewritten).
+lifeproj restore --all --old-home /Users/old/personal
 ```
 
 `lifeproj new` stamps the folder, renders a shared `CLAUDE.md` operating manual,

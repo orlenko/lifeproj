@@ -6,7 +6,7 @@
     lifeproj root [<path>] [--rehome]
     lifeproj home [<path>] [--rehome]
     lifeproj archive <name> [--purge-local]
-    lifeproj restore <name>
+    lifeproj restore <name> ... | --all [--old-home <dir>]
     lifeproj equip [<name> ...] [--force] [--dry-run]
     lifeproj route [<task> | -] [--domain <d>] [--json] | --hook | --prompt-hook
 """
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from lifeproj import (__version__, archive, brief, equip, osavul, overview,
-                      registry, route, scaffold, templates)
+                      registry, route, scaffold, stale_paths, templates)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -243,13 +243,48 @@ def cmd_archive(args) -> int:
 
 
 def cmd_restore(args) -> int:
+    """Bring tekas from Drive into a working local state: pull, refresh the
+    spine skills, and report (or with --old-home, fix) paths from another
+    machine."""
     config = Path(args.config).expanduser() if args.config else None
-    try:
-        archive.restore(args.name, config_path=config)
-    except archive.ArchiveError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    names = list(args.names)
+    if args.all:
+        for name, table in registry.projects(registry.load(config)).items():
+            wd = Path(str(table.get("working_dir", ""))).expanduser()
+            if not wd.is_dir() or not any(wd.iterdir()):
+                names.append(name)
+        if not names:
+            print("every active teka is already present locally")
+            return 0
+    if not names:
+        print("error: name a teka or pass --all", file=sys.stderr)
         return 1
-    return 0
+    old_home = Path(args.old_home).expanduser() if args.old_home else None
+
+    rc = 0
+    for name in names:
+        print(f"== {name}")
+        try:
+            archive.restore(name, config_path=config)
+        except archive.ArchiveError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        _, table = registry.find(registry.load(config), name)
+        wd = Path(str(table.get("working_dir"))).expanduser()
+        entry = equip.equip_teka(wd)
+        changed = [f"{rel}: {act}" for rel, act in entry["actions"] if act != "current"]
+        if changed:
+            print("equip: " + "; ".join(changed))
+        report = stale_paths.scan(wd, old_home=old_home, fix=old_home is not None)
+        for rel in report["fixed"]:
+            print(f"  path fixed: {rel}")
+        for rel, count in report["remaining"]:
+            print(f"  path stale: {rel} ({count})")
+        if report["remaining"] and old_home is None:
+            print("  (pass --old-home <old teka home> to rewrite these in code and config;"
+                  " prose is left as written)")
+    return rc
 
 
 def cmd_publish(args) -> int:
@@ -358,8 +393,14 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--config")
     a.set_defaults(func=cmd_archive)
 
-    r = sub.add_parser("restore", help="revive an archived teka from Drive")
-    r.add_argument("name")
+    r = sub.add_parser("restore", help="bring tekas from Drive into a working local state"
+                       " (revives archived ones too)")
+    r.add_argument("names", nargs="*", metavar="name")
+    r.add_argument("--all", action="store_true",
+                   help="every active teka whose working_dir is missing or empty")
+    r.add_argument("--old-home",
+                   help="the teka home on the machine these came from (e.g. /Users/old/personal);"
+                        " rewrites its paths in code and config files")
     r.add_argument("--config")
     r.set_defaults(func=cmd_restore)
 

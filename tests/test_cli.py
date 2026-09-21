@@ -124,3 +124,32 @@ class CliRootTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CliRestoreTests(unittest.TestCase):
+    def test_restore_all_pulls_only_missing_or_empty_tekas(self):
+        from unittest import mock
+        from lifeproj import archive
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            doc = registry.load(cfg)
+            present = Path(tmp) / "tekas" / "present"
+            present.mkdir(parents=True)
+            (present / "catalog.json").write_text("{}")
+            empty = Path(tmp) / "tekas" / "empty"
+            empty.mkdir()
+            registry.add(doc, "present", str(present), str(Path(tmp) / "e1"))
+            registry.add(doc, "empty", str(empty), str(Path(tmp) / "e2"))
+            registry.add(doc, "gone", str(Path(tmp) / "tekas" / "gone"), str(Path(tmp) / "e3"))
+            registry.save(doc, cfg)
+
+            pulled = []
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run",
+                                   side_effect=lambda a: pulled.append(a[-1]) or 0):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = cli.main(["restore", "--all", "--config", str(cfg)])
+            self.assertEqual(rc, 0)
+            self.assertEqual(sorted(pulled), ["empty", "gone"])
+            self.assertTrue((Path(tmp) / "tekas" / "gone").is_dir())

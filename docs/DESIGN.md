@@ -196,9 +196,11 @@ knowledge of my tekas?*
 6. **Move machines** — install the tools; **hand-carry the age identity** (the one
    true secret); restore `~/.config/cmirror/config.toml` + the shared IMAP secrets;
    on a machine with a different home or Drive path, `lifeproj home <path> --rehome`
-   and `lifeproj root <path> --rehome` repoint the registry; `cmirror pull --all`
-   reconstitutes every teka from Drive ciphertext; re-baseline the imap-extract
-   cursors.
+   and `lifeproj root <path> --rehome` repoint the registry; `lifeproj restore
+   --all --old-home <old teka home>` reconstitutes every teka from Drive
+   ciphertext (mkdir + `cmirror pull` + `equip`), rewrites the old machine's
+   absolute paths in code and config, and lists the ones left in prose;
+   re-baseline the imap-extract cursors.
 
 **Bootstrap chicken-and-egg:** the *only* thing you must move by hand is the age
 identity. Everything else — config, secrets, all teka content — can itself sit as a
