@@ -137,7 +137,7 @@ class CliRestoreTests(unittest.TestCase):
             present.mkdir(parents=True)
             (present / "catalog.json").write_text("{}")
             empty = Path(tmp) / "tekas" / "empty"
-            empty.mkdir()
+            (empty / ".agents" / "skills").mkdir(parents=True)   # interrupted pull
             registry.add(doc, "present", str(present), str(Path(tmp) / "e1"))
             registry.add(doc, "empty", str(empty), str(Path(tmp) / "e2"))
             registry.add(doc, "gone", str(Path(tmp) / "tekas" / "gone"), str(Path(tmp) / "e3"))

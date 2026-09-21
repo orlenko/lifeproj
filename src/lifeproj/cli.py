@@ -251,7 +251,9 @@ def cmd_restore(args) -> int:
     if args.all:
         for name, table in registry.projects(registry.load(config)).items():
             wd = Path(str(table.get("working_dir", ""))).expanduser()
-            if not wd.is_dir() or not any(wd.iterdir()):
+            # No catalog.json means no usable copy: absent, empty, or an
+            # interrupted pull that left only directories behind.
+            if not (wd / "catalog.json").is_file():
                 names.append(name)
         if not names:
             print("every active teka is already present locally")
@@ -397,7 +399,7 @@ def build_parser() -> argparse.ArgumentParser:
                        " (revives archived ones too)")
     r.add_argument("names", nargs="*", metavar="name")
     r.add_argument("--all", action="store_true",
-                   help="every active teka whose working_dir is missing or empty")
+                   help="every active teka without a local copy (no catalog.json in its working_dir)")
     r.add_argument("--old-home",
                    help="the teka home on the machine these came from (e.g. /Users/old/personal);"
                         " rewrites its paths in code and config files")
