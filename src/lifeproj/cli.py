@@ -4,6 +4,7 @@
     lifeproj overview
     lifeproj brief [--days 7] [--teka <name>]
     lifeproj root [<path>] [--rehome]
+    lifeproj home [<path>] [--rehome]
     lifeproj archive <name> [--purge-local]
     lifeproj restore <name>
     lifeproj equip [<name> ...] [--force] [--dry-run]
@@ -56,15 +57,20 @@ def _modules_from_args(args) -> list:
 
 def cmd_new(args) -> int:
     name = args.name
-    working_dir = Path(args.path).expanduser() if args.path else Path(f"~/personal/{name}").expanduser()
     config = Path(args.config).expanduser() if args.config else None
     # encrypted_dir: explicit flag > configured root (`lifeproj root`) > legacy
     # default. The legacy path predates the root and may not exist any more —
     # the note below surfaces that at scaffold time, not first-backup time.
+    # working_dir follows the same order with `lifeproj home`.
     try:
-        root = registry.encrypted_root(registry.load(config))
+        doc = registry.load(config)
+        root, home = registry.encrypted_root(doc), registry.teka_home(doc)
     except OSError:
-        root = None   # registry unreadable (e.g. sandboxed dry-run) — fall back
+        root = home = None   # registry unreadable (e.g. sandboxed dry-run) — fall back
+    if args.path:
+        working_dir = Path(args.path).expanduser()
+    else:
+        working_dir = (home or Path("~/personal").expanduser()) / name
     if args.encrypted_dir:
         encrypted_dir = Path(args.encrypted_dir).expanduser()
     elif root:
@@ -177,6 +183,53 @@ def cmd_root(args) -> int:
     return 0
 
 
+def cmd_home(args) -> int:
+    """Show or set [lifeproj].teka_home — the local folder tekas live under —
+    and report/repair each teka's working_dir against it."""
+    config = Path(args.config).expanduser() if args.config else None
+    doc = registry.load(config)
+    changed = False
+    if args.path:
+        home = Path(args.path).expanduser()
+        if home.exists() and not home.is_dir():
+            print(f"error: {home} exists and is not a directory", file=sys.stderr)
+            return 1
+        home.mkdir(parents=True, exist_ok=True)
+        registry.set_teka_home(doc, home)
+        changed = True
+    home = registry.teka_home(doc)
+    if home is None:
+        print("no teka home configured (new tekas go under ~/personal);"
+              " set one with: lifeproj home <path>")
+        return 0
+
+    if args.rehome:
+        # Archived tekas too: their plaintext is usually purged, and
+        # `lifeproj restore` should land them under the new home.
+        for name, old, new in registry.rehome_missing(
+                doc, home, key="working_dir",
+                sections=(registry.ACTIVE, registry.ARCHIVED)):
+            print(f"{name}: rehomed {old} -> {new}")
+            changed = True
+    if changed:
+        registry.save(doc, config)
+
+    print(f"teka home: {home}")
+    for name, table in registry.projects(doc).items():
+        raw = table.get("working_dir") if hasattr(table, "get") else None
+        if not raw:
+            print(f"  {name}: no working_dir in registry")
+            continue
+        wd = Path(str(raw)).expanduser()
+        if wd.exists():
+            note = "ok" if wd.parent == home else f"ok (outside home: {wd})"
+        else:
+            note = (f"MISSING {wd} — repoint with `lifeproj home --rehome`"
+                    if not args.rehome else f"pending restore: {wd}")
+        print(f"  {name}: {note}")
+    return 0
+
+
 def cmd_archive(args) -> int:
     config = Path(args.config).expanduser() if args.config else None
     try:
@@ -249,7 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     n = sub.add_parser("new", help="scaffold a new teka")
     n.add_argument("name")
-    n.add_argument("--path", help="working dir (default ~/personal/<name>)")
+    n.add_argument("--path", help="working dir (default <home>/<name> per `lifeproj home`, ~/personal/<name> when unset)")
     n.add_argument("--encrypted-dir",
                    help="cmirror encrypted_dir (default <root>/<name> per `lifeproj root`,"
                         " legacy ~/personal/gd-sync/<name> when no root is set)")
@@ -288,6 +341,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="repoint active tekas whose encrypted_dir is missing on disk to <root>/<name>")
     rt.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
     rt.set_defaults(func=cmd_root)
+
+    hm = sub.add_parser("home", help="show or set the local folder tekas live under")
+    hm.add_argument("path", nargs="?", help="new home (created if missing); omit to show")
+    hm.add_argument("--rehome", action="store_true",
+                    help="repoint tekas whose working_dir is missing on disk to <home>/<name>")
+    hm.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
+    hm.set_defaults(func=cmd_home)
 
     a = sub.add_parser("archive", help="retire a teka from the sync cycle")
     a.add_argument("name")

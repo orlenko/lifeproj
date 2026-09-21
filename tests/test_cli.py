@@ -40,6 +40,50 @@ class CliRootTests(unittest.TestCase):
             self.assertEqual(str(registry.projects(doc)["mila"]["encrypted_dir"]),
                              str(root / "mila"))
 
+    def test_home_set_show_and_rehome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = str(Path(tmp) / "config.toml")
+            home = Path(tmp) / "tekas"
+            old = Path(tmp) / "old-home" / "mila"
+            doc = registry.load(Path(cfg))
+            registry.add(doc, "mila", str(old), str(Path(tmp) / "enc" / "mila"))
+            registry.add(doc, "tax-2025", str(Path(tmp) / "old-home" / "tax-2025"),
+                         str(Path(tmp) / "enc" / "tax-2025"))
+            registry.archive(doc, "tax-2025")
+            registry.save(doc, Path(cfg))
+
+            rc, out, _ = self._run(["home", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn("no teka home configured", out)
+
+            rc, out, _ = self._run(["home", str(home), "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertTrue(home.is_dir())               # created on set
+            self.assertIn(f"teka home: {home}", out)
+            self.assertIn("MISSING", out)
+
+            rc, out, _ = self._run(["home", "--rehome", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn(f"mila: rehomed {old} -> {home / 'mila'}", out)
+            doc = registry.load(Path(cfg))
+            self.assertEqual(str(registry.projects(doc)["mila"]["working_dir"]),
+                             str(home / "mila"))
+            # Archived tekas are rehomed too, so a later restore lands in home.
+            self.assertEqual(str(registry.archived(doc)["tax-2025"]["working_dir"]),
+                             str(home / "tax-2025"))
+            # The encrypted side is `lifeproj root`'s business.
+            self.assertEqual(str(registry.projects(doc)["mila"]["encrypted_dir"]),
+                             str(Path(tmp) / "enc" / "mila"))
+
+    def test_new_defaults_working_dir_under_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = str(Path(tmp) / "config.toml")
+            home = Path(tmp) / "tekas"
+            self._run(["home", str(home), "--config", cfg])
+            rc, out, _ = self._run(["new", "demo", "--dry-run", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn(f"would create teka 'demo' at {home / 'demo'}", out)
+
     def test_root_rejects_missing_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = str(Path(tmp) / "config.toml")

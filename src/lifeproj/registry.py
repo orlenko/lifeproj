@@ -13,7 +13,8 @@ facts:
   way it ignores ``[archived]``. Today that's ``encrypted_root`` — the base
   folder under which new tekas' ``encrypted_dir`` defaults to ``<root>/<name>``,
   so backup targets are never micromanaged per teka (set once via
-  ``lifeproj root``).
+  ``lifeproj root``) — and ``teka_home``, the local folder new tekas'
+  ``working_dir`` defaults under (set once via ``lifeproj home``).
 
 No new config file is invented, and nothing here ever writes a key or passphrase:
 the age identity stays in cmirror's own ``identity_file``, outside every teka.
@@ -95,24 +96,43 @@ def set_encrypted_root(doc: TOMLDocument, path: Path) -> None:
     doc[LIFEPROJ]["encrypted_root"] = str(path)
 
 
-def rehome_missing(doc: TOMLDocument, root: Path) -> list:
-    """Repoint active tekas whose ``encrypted_dir`` is absent on disk to
-    ``<root>/<name>``. An ``encrypted_dir`` that exists holds real ciphertext
-    and is never touched (moving data is cmirror's business, done by hand).
-    Mutates ``doc``; returns ``[(name, old, new), ...]`` for what changed.
+def teka_home(doc: TOMLDocument) -> Optional[Path]:
+    """The configured local folder tekas live under, or None.
+
+    ``[lifeproj].teka_home`` in cmirror's config; new tekas default their
+    ``working_dir`` to ``<home>/<name>``. Unset means the legacy ``~/personal``.
+    """
+    sec = _section(doc, LIFEPROJ)
+    raw = sec.get("teka_home") if sec else None
+    return Path(str(raw)).expanduser() if raw else None
+
+
+def set_teka_home(doc: TOMLDocument, path: Path) -> None:
+    if LIFEPROJ not in doc:
+        doc[LIFEPROJ] = tomlkit.table()
+    doc[LIFEPROJ]["teka_home"] = str(path)
+
+
+def rehome_missing(doc: TOMLDocument, root: Path, key: str = "encrypted_dir",
+                   sections: tuple = (ACTIVE,)) -> list:
+    """Repoint tekas whose ``key`` path is absent on disk to ``<root>/<name>``.
+    A path that exists holds real data and is never touched (moving data is
+    cmirror's business, done by hand). Mutates ``doc``; returns
+    ``[(name, old, new), ...]`` for what changed.
     """
     moved = []
-    sec = _section(doc, ACTIVE) or {}
-    for name in sec:
-        table = sec[name]
-        old = table.get("encrypted_dir")
-        new = str(root / name)
-        if old and Path(str(old)).expanduser().exists():
-            continue
-        if old is not None and str(old) == new:
-            continue
-        table["encrypted_dir"] = new
-        moved.append((name, str(old) if old is not None else None, new))
+    for section in sections:
+        sec = _section(doc, section) or {}
+        for name in sec:
+            table = sec[name]
+            old = table.get(key)
+            new = str(root / name)
+            if old and Path(str(old)).expanduser().exists():
+                continue
+            if old is not None and str(old) == new:
+                continue
+            table[key] = new
+            moved.append((name, str(old) if old is not None else None, new))
     return moved
 
 

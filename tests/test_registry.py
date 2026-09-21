@@ -91,6 +91,13 @@ class RegistryTests(unittest.TestCase):
                          "/Users/me/.config/cmirror/identity.txt")
         self.assertEqual(set(registry.projects(reparsed)), {"strata", "tax-2025"})
 
+    def test_teka_home_round_trip(self):
+        doc = self.doc()
+        self.assertIsNone(registry.teka_home(doc))
+        registry.set_teka_home(doc, Path("/Users/me/tekas"))
+        reparsed = tomlkit.parse(tomlkit.dumps(doc))
+        self.assertEqual(registry.teka_home(reparsed), Path("/Users/me/tekas"))
+
     def test_rehome_missing_repoints_only_absent_active_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "root"
