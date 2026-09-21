@@ -71,6 +71,10 @@ class CliRootTests(unittest.TestCase):
             # Archived tekas are rehomed too, so a later restore lands in home.
             self.assertEqual(str(registry.archived(doc)["tax-2025"]["working_dir"]),
                              str(home / "tax-2025"))
+            # Already under home but not on disk yet: a restore, not a repoint.
+            rc, out, _ = self._run(["home", "--config", cfg])
+            self.assertIn(f"mila: pending restore: {home / 'mila'}", out)
+            self.assertNotIn("MISSING", out)
             # The encrypted side is `lifeproj root`'s business.
             self.assertEqual(str(registry.projects(doc)["mila"]["encrypted_dir"]),
                              str(Path(tmp) / "enc" / "mila"))

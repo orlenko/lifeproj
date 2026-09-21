@@ -223,9 +223,10 @@ def cmd_home(args) -> int:
         wd = Path(str(raw)).expanduser()
         if wd.exists():
             note = "ok" if wd.parent == home else f"ok (outside home: {wd})"
+        elif wd == home / name or args.rehome:
+            note = f"pending restore: {wd} (`cmirror pull --project {name}`)"
         else:
-            note = (f"MISSING {wd} — repoint with `lifeproj home --rehome`"
-                    if not args.rehome else f"pending restore: {wd}")
+            note = f"MISSING {wd} — repoint with `lifeproj home --rehome`"
         print(f"  {name}: {note}")
     return 0
 
