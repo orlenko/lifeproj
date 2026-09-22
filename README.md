@@ -37,6 +37,53 @@ uv tool install git+https://github.com/orlenko/lifeproj
 uv tool install .
 ```
 
+## The starter
+
+Run `lifeproj` with no arguments on a terminal and it opens on your tekas:
+
+```
+ lifeproj 0.12.0 · 3 tekas · backups → ~/GoogleDrive/teka-backups
+
+ › New teka       scaffold one from the spine + modules
+   Overview       intake, backup age and mail label, per teka
+   Brief          one merged list of what needs you today
+   Equip all      re-sync the spine skills into every teka
+   Backup root    ~/GoogleDrive/teka-backups
+   Teka home      ~/tekas
+   Restore all    2 registered tekas with no local copy here
+
+   TEKA           what is waiting, and how old the backup is
+   tenants-123main  intake 4 · backup 9h ago · Personal/123Main
+   taxes-2025       intake clear · backup 2d ago
+   borey            archived
+
+   Name it, pick the modules, and Enter stamps the teka: spine, module
+   folders, skills, and a cmirror entry so it gets backed up.
+
+ Enter open · ↑↓ move · n new teka · esc quit
+```
+
+Enter on a teka gives what you can run on it (publish, drain, equip, archive or
+restore); **New teka** opens a form where each module row carries its own
+one-line summary, so you pick modules by what they do rather than by name. A
+teka the registry knows but this machine has no copy of opens on **Restore**,
+and **Restore all** appears while any is in that state — which is what a new
+machine looks like.
+
+Every screen composes **one ordinary `lifeproj` command**, shows it as it
+changes, and on Enter runs exactly that:
+
+```
+ $ lifeproj new tenants-123main --domain tenancy --intake email,docs --artifact ledger,chapters
+```
+
+So the menu teaches the CLI instead of hiding it, and it can start nothing the
+command line cannot. Keys: `↑↓` move, `←→` choose, `space` toggles a module or
+edits a text row, `m` folds out the rest (IMAP label, chapter noun, working dir,
+registry, dry run), `esc` backs out, `q` quits. What kind of teka you tend to
+make is remembered; the name never is. Off a terminal — a pipe, a hook, a script
+— bare `lifeproj` still just prints its usage.
+
 ## Quickstart
 
 ```sh
@@ -140,12 +187,17 @@ stays in cmirror's own config, outside every teka.
 
 ## Status
 
-v0.10 — `lifeproj brief`, one cross-teka list of what needs you, read from the
-published slices; configurable backup root (`lifeproj root`); every teka carries
+v0.12 — bare `lifeproj` opens an interactive starter: your tekas, what can be
+run on each, and a New-teka form that names what every module does. It composes
+ordinary commands and runs them, so the CLI stays the only surface. v0.11 —
+a configurable teka home (`lifeproj home`) beside the backup root, and
+`lifeproj restore --all [--old-home]` to bring a whole cabinet onto a new
+machine. Also: `lifeproj brief`, one cross-teka list of what needs you, read
+from the published slices; every teka carries
 the Osavul publishing contract from birth (and `equip` retrofits it); fresh and
 existing tekas support Codex and Claude Code; `new`, `equip`, `overview`,
-`brief`, `archive`, `restore`, `publish`, and completion draining are
-covered by tests. Generic intake/convert tools live in the homebrew tap and are called,
+`brief`, `archive`, `restore`, `publish`, the starter, and completion draining
+are covered by tests. Generic intake/convert tools live in the homebrew tap and are called,
 not vendored here.
 
 MIT licensed.
