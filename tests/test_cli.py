@@ -40,6 +40,92 @@ class CliRootTests(unittest.TestCase):
             self.assertEqual(str(registry.projects(doc)["mila"]["encrypted_dir"]),
                              str(root / "mila"))
 
+    def test_home_set_show_and_rehome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())   # the home is stored resolved (/var -> /private/var)
+            cfg = str(Path(tmp) / "config.toml")
+            home = Path(tmp) / "tekas"
+            old = Path(tmp) / "old-home" / "mila"
+            doc = registry.load(Path(cfg))
+            registry.add(doc, "mila", str(old), str(Path(tmp) / "enc" / "mila"))
+            registry.add(doc, "tax-2025", str(Path(tmp) / "old-home" / "tax-2025"),
+                         str(Path(tmp) / "enc" / "tax-2025"))
+            registry.archive(doc, "tax-2025")
+            registry.save(doc, Path(cfg))
+
+            rc, out, _ = self._run(["home", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn("no teka home configured", out)
+
+            rc, out, _ = self._run(["home", str(home), "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertTrue(home.is_dir())               # created on set
+            self.assertIn(f"teka home: {home}", out)
+            self.assertIn("MISSING", out)
+
+            rc, out, _ = self._run(["home", "--rehome", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn(f"mila: rehomed {old} -> {home / 'mila'}", out)
+            doc = registry.load(Path(cfg))
+            self.assertEqual(str(registry.projects(doc)["mila"]["working_dir"]),
+                             str(home / "mila"))
+            # Archived tekas are rehomed too, so a later restore lands in home.
+            self.assertEqual(str(registry.archived(doc)["tax-2025"]["working_dir"]),
+                             str(home / "tax-2025"))
+            # Already under home but not on disk yet: a restore, not a repoint.
+            rc, out, _ = self._run(["home", "--config", cfg])
+            self.assertIn(f"mila: pending restore: {home / 'mila'}", out)
+            self.assertNotIn("MISSING", out)
+            # The encrypted side is `lifeproj root`'s business.
+            self.assertEqual(str(registry.projects(doc)["mila"]["encrypted_dir"]),
+                             str(Path(tmp) / "enc" / "mila"))
+
+    def test_new_defaults_working_dir_under_home(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
+            cfg = str(Path(tmp) / "config.toml")
+            home = Path(tmp) / "tekas"
+            self._run(["home", str(home), "--config", cfg])
+            rc, out, _ = self._run(["new", "demo", "--dry-run", "--config", cfg])
+            self.assertEqual(rc, 0)
+            self.assertIn(f"would create teka 'demo' at {home / 'demo'}", out)
+
+    def test_home_stores_relative_path_as_absolute(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            cfg = str(tmp / "config.toml")
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                rc, _, _ = self._run(["home", "tekas", "--config", cfg])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(rc, 0)
+            self.assertEqual(registry.teka_home(registry.load(Path(cfg))), tmp / "tekas")
+
+    def test_home_rehomes_a_working_dir_that_is_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            cfg = tmp / "config.toml"
+            stray = tmp / "stray"
+            stray.write_text("not a teka")
+            doc = registry.load(cfg)
+            registry.add(doc, "mila", str(stray), str(tmp / "enc" / "mila"))
+            registry.save(doc, cfg)
+            rc, out, _ = self._run(["home", str(tmp / "tekas"), "--config", str(cfg)])
+            self.assertIn("NOT A DIRECTORY", out)
+            rc, out, _ = self._run(["home", "--rehome", "--config", str(cfg)])
+            self.assertIn(f"mila: rehomed {stray} -> {tmp / 'tekas' / 'mila'}", out)
+
+    def test_new_rejects_path_like_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = str(Path(tmp) / "config.toml")
+            for bad in ("/tmp/demo", "a/b", "..", "."):
+                rc, _, err = self._run(["new", bad, "--dry-run", "--config", cfg])
+                self.assertEqual(rc, 1, bad)
+                self.assertIn("plain folder name", err)
+
     def test_root_rejects_missing_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             cfg = str(Path(tmp) / "config.toml")
@@ -76,3 +162,113 @@ class CliRootTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CliRestoreTests(unittest.TestCase):
+    def test_restore_all_pulls_only_missing_or_empty_tekas(self):
+        from unittest import mock
+        from lifeproj import archive
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            doc = registry.load(cfg)
+            present = Path(tmp) / "tekas" / "present"
+            present.mkdir(parents=True)
+            (present / "catalog.json").write_text("{}")
+            empty = Path(tmp) / "tekas" / "empty"
+            (empty / ".agents" / "skills").mkdir(parents=True)   # interrupted pull
+            registry.add(doc, "present", str(present), str(Path(tmp) / "e1"))
+            registry.add(doc, "empty", str(empty), str(Path(tmp) / "e2"))
+            registry.add(doc, "gone", str(Path(tmp) / "tekas" / "gone"), str(Path(tmp) / "e3"))
+            registry.save(doc, cfg)
+
+            pulled = []
+
+            def fake_pull(a):   # a real pull brings the teka's catalog.json
+                pulled.append(a[-1])
+                (Path(tmp) / "tekas" / a[-1] / "catalog.json").write_text("{}")
+                return 0
+
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run", side_effect=fake_pull):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    rc = cli.main(["restore", "--all", "--config", str(cfg)])
+            self.assertEqual(rc, 0)
+            self.assertEqual(sorted(pulled), ["empty", "gone"])
+            self.assertTrue((Path(tmp) / "tekas" / "gone").is_dir())
+
+            # A name also picked by --all, or repeated, is restored once.
+            pulled.clear()
+            for n in ("empty", "gone"):
+                (Path(tmp) / "tekas" / n / "catalog.json").unlink()
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run", side_effect=fake_pull):
+                with redirect_stdout(io.StringIO()):
+                    cli.main(["restore", "gone", "gone", "--all", "--config", str(cfg)])
+            self.assertEqual(sorted(pulled), ["empty", "gone"])
+
+    def test_restore_continues_past_a_post_pull_failure(self):
+        from unittest import mock
+        from lifeproj import archive, equip
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            doc = registry.load(cfg)
+            for n in ("a", "b"):
+                registry.add(doc, n, str(Path(tmp) / "tekas" / n), str(Path(tmp) / n))
+            registry.save(doc, cfg)
+            calls = []
+
+            def flaky(wd, **kw):
+                calls.append(wd.name)
+                if wd.name == "a":
+                    raise PermissionError("AGENTS.md unreadable")
+                return {"actions": []}
+
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run", return_value=0), \
+                 mock.patch.object(equip, "equip_teka", side_effect=flaky):
+                err = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                    rc = cli.main(["restore", "a", "b", "--config", str(cfg)])
+            self.assertEqual(rc, 1)
+            self.assertEqual(calls, ["a", "b"])
+            self.assertIn("post-pull setup failed", err.getvalue())
+
+
+class CliRestoreFailureTests(unittest.TestCase):
+    def _cfg(self, tmp, names):
+        cfg = Path(tmp) / "config.toml"
+        doc = registry.load(cfg)
+        for n in names:
+            registry.add(doc, n, str(Path(tmp) / "tekas" / n), str(Path(tmp) / n))
+        registry.save(doc, cfg)
+        return cfg
+
+    def _restore(self, cfg, names, **patches):
+        from unittest import mock
+        from lifeproj import archive
+        pulled = []
+        with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+             mock.patch.object(archive, "_run", side_effect=lambda a: pulled.append(a[-1]) or 0):
+            err = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                rc = cli.main(["restore", *names, "--config", str(cfg)])
+        return rc, pulled, err.getvalue()
+
+    def test_a_pull_without_catalog_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._cfg(tmp, ["hollow"])
+            rc, pulled, err = self._restore(cfg, ["hollow"])   # fake pull writes nothing
+            self.assertEqual(rc, 1)
+            self.assertEqual(pulled, ["hollow"])
+            self.assertIn("not a usable teka", err)
+
+    def test_a_filesystem_error_fails_only_that_teka(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._cfg(tmp, ["blocked", "fine"])
+            (Path(tmp) / "tekas").mkdir()
+            (Path(tmp) / "tekas" / "blocked").write_text("a file, not a dir")
+            rc, pulled, err = self._restore(cfg, ["blocked", "fine"])
+            self.assertEqual(rc, 1)
+            self.assertEqual(pulled, ["fine"])
+            self.assertIn("error: blocked:", err)

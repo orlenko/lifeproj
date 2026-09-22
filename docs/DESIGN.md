@@ -138,7 +138,11 @@ competing with it:
   cmirror's config loader.)
 - lifeproj's own settings ride in a `[lifeproj]` table, ignored by cmirror the
   same way `[archived]` is. Today: `encrypted_root` — the base folder new tekas
-  back up under (`encrypted_dir` defaults to `<root>/<name>`). Set it once with
+  back up under (`encrypted_dir` defaults to `<root>/<name>`) — and `teka_home`,
+  the local folder new tekas live in (`working_dir` defaults to `<home>/<name>`,
+  legacy `~/personal/<name>` when unset; `lifeproj home <path>`, with the same
+  `--rehome` for working dirs missing on disk, archived tekas included so a
+  later restore lands in the new home). Set it once with
   `lifeproj root <path>`; `lifeproj root --rehome` repoints tekas whose
   `encrypted_dir` vanished from disk (a dir that *exists* holds real ciphertext
   and is never auto-moved). This replaced the hardcoded `~/personal/gd-sync/`
@@ -191,8 +195,12 @@ knowledge of my tekas?*
    ciphertext too. `lifeproj restore <name>` reverses it (`cmirror pull`).
 6. **Move machines** — install the tools; **hand-carry the age identity** (the one
    true secret); restore `~/.config/cmirror/config.toml` + the shared IMAP secrets;
-   `cmirror pull --all` reconstitutes every teka from Drive ciphertext; re-baseline
-   the imap-extract cursors.
+   on a machine with a different home or Drive path, `lifeproj home <path> --rehome`
+   and `lifeproj root <path> --rehome` repoint the registry; `lifeproj restore
+   --all --old-home <old teka home>` reconstitutes every teka from Drive
+   ciphertext (mkdir + `cmirror pull` + `equip`), rewrites the old machine's
+   absolute paths in code and config, and lists the ones left in prose;
+   re-baseline the imap-extract cursors.
 
 **Bootstrap chicken-and-egg:** the *only* thing you must move by hand is the age
 identity. Everything else — config, secrets, all teka content — can itself sit as a

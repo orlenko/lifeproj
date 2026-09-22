@@ -4,8 +4,9 @@
     lifeproj overview
     lifeproj brief [--days 7] [--teka <name>]
     lifeproj root [<path>] [--rehome]
+    lifeproj home [<path>] [--rehome]
     lifeproj archive <name> [--purge-local]
-    lifeproj restore <name>
+    lifeproj restore <name> ... | --all [--old-home <dir>]
     lifeproj equip [<name> ...] [--force] [--dry-run]
     lifeproj route [<task> | -] [--domain <d>] [--json] | --hook | --prompt-hook
 """
@@ -19,7 +20,7 @@ import sys
 from pathlib import Path
 
 from lifeproj import (__version__, archive, brief, equip, osavul, overview,
-                      registry, route, scaffold, templates)
+                      registry, route, scaffold, stale_paths, templates)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -56,15 +57,25 @@ def _modules_from_args(args) -> list:
 
 def cmd_new(args) -> int:
     name = args.name
-    working_dir = Path(args.path).expanduser() if args.path else Path(f"~/personal/{name}").expanduser()
+    # The name is a registry key and the last path component under the home;
+    # anything path-like would escape the home when joined.
+    if not name or name in (".", "..") or "/" in name or Path(name).is_absolute():
+        print(f"error: teka name {name!r} must be a plain folder name", file=sys.stderr)
+        return 1
     config = Path(args.config).expanduser() if args.config else None
     # encrypted_dir: explicit flag > configured root (`lifeproj root`) > legacy
     # default. The legacy path predates the root and may not exist any more —
     # the note below surfaces that at scaffold time, not first-backup time.
+    # working_dir follows the same order with `lifeproj home`.
     try:
-        root = registry.encrypted_root(registry.load(config))
+        doc = registry.load(config)
+        root, home = registry.encrypted_root(doc), registry.teka_home(doc)
     except OSError:
-        root = None   # registry unreadable (e.g. sandboxed dry-run) — fall back
+        root = home = None   # registry unreadable (e.g. sandboxed dry-run) — fall back
+    if args.path:
+        working_dir = Path(args.path).expanduser()
+    else:
+        working_dir = (home or Path("~/personal").expanduser()) / name
     if args.encrypted_dir:
         encrypted_dir = Path(args.encrypted_dir).expanduser()
     elif root:
@@ -177,6 +188,56 @@ def cmd_root(args) -> int:
     return 0
 
 
+def cmd_home(args) -> int:
+    """Show or set [lifeproj].teka_home — the local folder tekas live under —
+    and report/repair each teka's working_dir against it."""
+    config = Path(args.config).expanduser() if args.config else None
+    doc = registry.load(config)
+    changed = False
+    if args.path:
+        home = Path(args.path).expanduser().resolve()
+        if home.exists() and not home.is_dir():
+            print(f"error: {home} exists and is not a directory", file=sys.stderr)
+            return 1
+        home.mkdir(parents=True, exist_ok=True)
+        registry.set_teka_home(doc, home)
+        changed = True
+    home = registry.teka_home(doc)
+    if home is None:
+        print("no teka home configured (new tekas go under ~/personal);"
+              " set one with: lifeproj home <path>")
+        return 0
+
+    if args.rehome:
+        # Archived tekas too: their plaintext is usually purged, and
+        # `lifeproj restore` should land them under the new home.
+        for name, old, new in registry.rehome_missing(
+                doc, home, key="working_dir",
+                sections=(registry.ACTIVE, registry.ARCHIVED), need_dir=True):
+            print(f"{name}: rehomed {old} -> {new}")
+            changed = True
+    if changed:
+        registry.save(doc, config)
+
+    print(f"teka home: {home}")
+    for name, table in registry.projects(doc).items():
+        raw = table.get("working_dir") if hasattr(table, "get") else None
+        if not raw:
+            print(f"  {name}: no working_dir in registry")
+            continue
+        wd = Path(str(raw)).expanduser()
+        if wd.is_dir():
+            note = "ok" if wd.parent == home else f"ok (outside home: {wd})"
+        elif wd.exists():
+            note = f"NOT A DIRECTORY {wd} — repoint with `lifeproj home --rehome`"
+        elif wd == home / name or args.rehome:
+            note = f"pending restore: {wd} (`cmirror pull --project {name}`)"
+        else:
+            note = f"MISSING {wd} — repoint with `lifeproj home --rehome`"
+        print(f"  {name}: {note}")
+    return 0
+
+
 def cmd_archive(args) -> int:
     config = Path(args.config).expanduser() if args.config else None
     try:
@@ -189,13 +250,66 @@ def cmd_archive(args) -> int:
 
 
 def cmd_restore(args) -> int:
+    """Bring tekas from Drive into a working local state: pull, refresh the
+    spine skills, and report (or with --old-home, fix) paths from another
+    machine."""
     config = Path(args.config).expanduser() if args.config else None
-    try:
-        archive.restore(args.name, config_path=config)
-    except archive.ArchiveError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    names = list(args.names)
+    if args.all:
+        for name, table in registry.projects(registry.load(config)).items():
+            wd = Path(str(table.get("working_dir", ""))).expanduser()
+            # No catalog.json means no usable copy: absent, empty, or an
+            # interrupted pull that left only directories behind.
+            if not (wd / "catalog.json").is_file():
+                names.append(name)
+        if not names:
+            print("every active teka is already present locally")
+            return 0
+    if not names:
+        print("error: name a teka or pass --all", file=sys.stderr)
         return 1
-    return 0
+    names = list(dict.fromkeys(names))   # `demo --all` or a repeated name: once
+    old_home = Path(args.old_home).expanduser() if args.old_home else None
+
+    rc = 0
+    for name in names:
+        print(f"== {name}")
+        try:
+            archive.restore(name, config_path=config)
+        except (archive.ArchiveError, OSError) as exc:
+            # e.g. working_dir is a regular file, or can't be created
+            print(f"error: {name}: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        _, table = registry.find(registry.load(config), name)
+        wd = Path(str(table.get("working_dir"))).expanduser()
+        # The pull succeeded; a failure refreshing skills or fixing paths is
+        # this teka's problem, not a reason to leave the rest unrestored.
+        try:
+            entry = equip.equip_teka(wd)
+            report = stale_paths.scan(wd, old_home=old_home, fix=old_home is not None)
+        except (OSError, UnicodeError) as exc:
+            print(f"error: {name}: pulled, but post-pull setup failed: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        if entry.get("status") == "skipped":
+            # Pulled, but still no usable teka (e.g. no catalog.json in Drive):
+            # --all would keep re-pulling it, so say so and fail.
+            print(f"error: {name}: pulled, but not a usable teka: {entry['error']}",
+                  file=sys.stderr)
+            rc = 1
+            continue
+        changed = [f"{rel}: {act}" for rel, act in entry["actions"] if act != "current"]
+        if changed:
+            print("equip: " + "; ".join(changed))
+        for rel in report["fixed"]:
+            print(f"  path fixed: {rel}")
+        for rel, count in report["remaining"]:
+            print(f"  path stale: {rel} ({count})")
+        if report["remaining"] and old_home is None:
+            print("  (pass --old-home <old teka home> to rewrite these in code and config;"
+                  " prose is left as written)")
+    return rc
 
 
 def cmd_publish(args) -> int:
@@ -249,7 +363,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     n = sub.add_parser("new", help="scaffold a new teka")
     n.add_argument("name")
-    n.add_argument("--path", help="working dir (default ~/personal/<name>)")
+    n.add_argument("--path", help="working dir (default <home>/<name> per `lifeproj home`, ~/personal/<name> when unset)")
     n.add_argument("--encrypted-dir",
                    help="cmirror encrypted_dir (default <root>/<name> per `lifeproj root`,"
                         " legacy ~/personal/gd-sync/<name> when no root is set)")
@@ -289,6 +403,13 @@ def build_parser() -> argparse.ArgumentParser:
     rt.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
     rt.set_defaults(func=cmd_root)
 
+    hm = sub.add_parser("home", help="show or set the local folder tekas live under")
+    hm.add_argument("path", nargs="?", help="new home (created if missing); omit to show")
+    hm.add_argument("--rehome", action="store_true",
+                    help="repoint tekas whose working_dir is missing on disk to <home>/<name>")
+    hm.add_argument("--config", help="cmirror config path (default $CMIRROR_CONFIG or ~/.config/cmirror/config.toml)")
+    hm.set_defaults(func=cmd_home)
+
     a = sub.add_parser("archive", help="retire a teka from the sync cycle")
     a.add_argument("name")
     a.add_argument("--purge-local", action="store_true", help="delete the local plaintext copy after verify")
@@ -297,8 +418,14 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--config")
     a.set_defaults(func=cmd_archive)
 
-    r = sub.add_parser("restore", help="revive an archived teka from Drive")
-    r.add_argument("name")
+    r = sub.add_parser("restore", help="bring tekas from Drive into a working local state"
+                       " (revives archived ones too)")
+    r.add_argument("names", nargs="*", metavar="name")
+    r.add_argument("--all", action="store_true",
+                   help="every active teka without a local copy (no catalog.json in its working_dir)")
+    r.add_argument("--old-home",
+                   help="the teka home on the machine these came from (e.g. /Users/old/personal);"
+                        " rewrites its paths in code and config files")
     r.add_argument("--config")
     r.set_defaults(func=cmd_restore)
 

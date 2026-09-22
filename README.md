@@ -44,6 +44,9 @@ uv tool install .
 # Every new teka's encrypted_dir defaults to <root>/<name> — no per-teka paths.
 lifeproj root ~/GoogleDrive/teka-backups
 
+# Once: set the local folder tekas live in (default ~/personal when unset).
+lifeproj home ~/tekas
+
 # Scaffold a property teka: email + document intake, a rent ledger, and tenancies
 # as finite "chapters" inside an ongoing project.
 lifeproj new tenants-123main \
@@ -71,6 +74,15 @@ lifeproj equip
 # If the backup location moved: check every teka's encrypted_dir against the
 # root, and repoint the ones whose dir no longer exists on disk.
 lifeproj root --rehome
+
+# New machine or new home folder: repoint every teka's working_dir that isn't on
+# disk here to <home>/<name>, then `cmirror pull --all` fills them in.
+lifeproj home ~/tekas --rehome
+
+# Then bring every missing teka into a working state: create the folder, pull
+# from Drive, refresh spine skills, and rewrite the old machine's paths in code
+# and config (prose is reported, not rewritten).
+lifeproj restore --all --old-home /Users/old/personal
 ```
 
 `lifeproj new` stamps the folder, renders a shared `CLAUDE.md` operating manual,
