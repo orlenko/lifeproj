@@ -274,6 +274,44 @@ def route(description: str, *, domain: Optional[str] = None,
 SPAWN_TOOLS = ("Agent", "Task")
 
 
+def _tier_of(model: Optional[str]) -> Optional[str]:
+    """'opus', 'claude-opus-5', 'opus[1m]' → 'opus'; 'inherit' or unknown → None."""
+    model = (model or "").lower()
+    return next((t for t in TIERS if t in model), None)
+
+
+def _agent_dirs(cwd: Optional[str]) -> list:
+    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    dirs = [config / "agents"]
+    if cwd:
+        here = Path(cwd)
+        dirs = [d / ".claude" / "agents" for d in (here, *here.parents)] + dirs
+    return dirs + sorted(config.glob("plugins/**/agents"))
+
+
+def agent_definition_tier(subagent_type: Optional[str], cwd: Optional[str]) -> Optional[str]:
+    """The tier an agent definition pins in its frontmatter (`model: opus`).
+    Someone chose that model for that agent; an explicit `model` on the spawn
+    overrides the frontmatter, so without this the hook would lower it.
+    Best-effort: a definition we can't find or read pins nothing."""
+    if not subagent_type:
+        return None
+    name = subagent_type.split(":")[-1]        # plugin agents are "plugin:agent"
+    try:
+        for directory in _agent_dirs(cwd):
+            for path in sorted(directory.glob("*.md")):
+                head = path.read_text(errors="replace").split("---", 2)
+                if len(head) < 3:
+                    continue
+                fields = dict(line.split(":", 1) for line in head[1].splitlines() if ":" in line)
+                declared = fields.get("name", "").strip().strip("\"'") or path.stem
+                if declared == name:
+                    return _tier_of(fields.get("model", "").strip().strip("\"'"))
+    except OSError:
+        pass
+    return None
+
+
 def hook(log_path: Optional[Path] = None) -> int:
     """Claude Code PreToolUse hook: read the pending subagent spawn on stdin and
     rewrite its ``model``. Anything unexpected prints nothing, which leaves the
@@ -295,12 +333,13 @@ def hook(log_path: Optional[Path] = None) -> int:
     if not result["routed"]:
         return 0
     # A session leaves `model` unset unless someone chose one — the user ("spawn
-    # an Opus subagent") or the prompt hook's instruction. Routing may raise
-    # that choice, never lower it.
-    chosen = tool_input.get("model")
+    # an Opus subagent") or the prompt hook's instruction — and an agent
+    # definition may pin one. Routing may raise those choices, never lower them.
     model = result["model"]
-    if chosen in TIERS and TIERS.index(chosen) > TIERS.index(model):
-        model = chosen
+    for chosen in (_tier_of(tool_input.get("model")),
+                   agent_definition_tier(tool_input.get("subagent_type"), event.get("cwd"))):
+        if chosen and TIERS.index(chosen) > TIERS.index(model):
+            model = chosen
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "updatedInput": {**tool_input, "model": model},

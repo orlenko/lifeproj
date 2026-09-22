@@ -186,6 +186,31 @@ class HookTest(unittest.TestCase):
                                   {"model": "opus", "routed": True})
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["model"], "opus")
 
+    def test_never_lowers_a_model_pinned_by_the_agent_definition(self):
+        # Live, 2026-09-18: an agent whose .md pins opus, spawned with no `model`,
+        # ran on haiku because the hook's explicit model overrides frontmatter.
+        with tempfile.TemporaryDirectory() as tmp:
+            agents = Path(tmp) / ".claude" / "agents"
+            agents.mkdir(parents=True)
+            (agents / "reviewer.md").write_text(
+                "---\nname: hostile-eyes\ndescription: x: y\nmodel: claude-opus-5\n---\nbody\n")
+            (agents / "cheap.md").write_text("---\nname: cheap\nmodel: inherit\n---\nbody\n")
+            nested = Path(tmp) / "src" / "pkg"
+            nested.mkdir(parents=True)
+
+            def routed_model(subagent_type, cwd=nested):
+                event = {"tool_name": "Agent", "cwd": str(cwd),
+                         "tool_input": {"description": "d", "prompt": "p",
+                                        "subagent_type": subagent_type}}
+                with mock.patch.dict("os.environ", {"CLAUDE_CONFIG_DIR": str(Path(tmp) / "none")}):
+                    out = self.run_hook(event, {"model": "haiku", "routed": True})[1]
+                return json.loads(out)["hookSpecificOutput"]["updatedInput"]["model"]
+
+            self.assertEqual(routed_model("hostile-eyes"), "opus")          # found from a subdir
+            self.assertEqual(routed_model("someplugin:hostile-eyes"), "opus")
+            self.assertEqual(routed_model("cheap"), "haiku")                # inherit pins nothing
+            self.assertEqual(routed_model("unknown-type"), "haiku")
+
     def test_leaves_spawn_alone(self):
         spawn = {"description": "d", "prompt": "p"}
         for event, routed in (
