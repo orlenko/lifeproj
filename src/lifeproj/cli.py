@@ -276,8 +276,9 @@ def cmd_restore(args) -> int:
         print(f"== {name}")
         try:
             archive.restore(name, config_path=config)
-        except archive.ArchiveError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        except (archive.ArchiveError, OSError) as exc:
+            # e.g. working_dir is a regular file, or can't be created
+            print(f"error: {name}: {exc}", file=sys.stderr)
             rc = 1
             continue
         _, table = registry.find(registry.load(config), name)
@@ -289,6 +290,13 @@ def cmd_restore(args) -> int:
             report = stale_paths.scan(wd, old_home=old_home, fix=old_home is not None)
         except (OSError, UnicodeError) as exc:
             print(f"error: {name}: pulled, but post-pull setup failed: {exc}", file=sys.stderr)
+            rc = 1
+            continue
+        if entry.get("status") == "skipped":
+            # Pulled, but still no usable teka (e.g. no catalog.json in Drive):
+            # --all would keep re-pulling it, so say so and fail.
+            print(f"error: {name}: pulled, but not a usable teka: {entry['error']}",
+                  file=sys.stderr)
             rc = 1
             continue
         changed = [f"{rel}: {act}" for rel, act in entry["actions"] if act != "current"]

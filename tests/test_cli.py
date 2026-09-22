@@ -182,9 +182,14 @@ class CliRestoreTests(unittest.TestCase):
             registry.save(doc, cfg)
 
             pulled = []
+
+            def fake_pull(a):   # a real pull brings the teka's catalog.json
+                pulled.append(a[-1])
+                (Path(tmp) / "tekas" / a[-1] / "catalog.json").write_text("{}")
+                return 0
+
             with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
-                 mock.patch.object(archive, "_run",
-                                   side_effect=lambda a: pulled.append(a[-1]) or 0):
+                 mock.patch.object(archive, "_run", side_effect=fake_pull):
                 out = io.StringIO()
                 with redirect_stdout(out):
                     rc = cli.main(["restore", "--all", "--config", str(cfg)])
@@ -194,9 +199,10 @@ class CliRestoreTests(unittest.TestCase):
 
             # A name also picked by --all, or repeated, is restored once.
             pulled.clear()
+            for n in ("empty", "gone"):
+                (Path(tmp) / "tekas" / n / "catalog.json").unlink()
             with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
-                 mock.patch.object(archive, "_run",
-                                   side_effect=lambda a: pulled.append(a[-1]) or 0):
+                 mock.patch.object(archive, "_run", side_effect=fake_pull):
                 with redirect_stdout(io.StringIO()):
                     cli.main(["restore", "gone", "gone", "--all", "--config", str(cfg)])
             self.assertEqual(sorted(pulled), ["empty", "gone"])
@@ -227,3 +233,42 @@ class CliRestoreTests(unittest.TestCase):
             self.assertEqual(rc, 1)
             self.assertEqual(calls, ["a", "b"])
             self.assertIn("post-pull setup failed", err.getvalue())
+
+
+class CliRestoreFailureTests(unittest.TestCase):
+    def _cfg(self, tmp, names):
+        cfg = Path(tmp) / "config.toml"
+        doc = registry.load(cfg)
+        for n in names:
+            registry.add(doc, n, str(Path(tmp) / "tekas" / n), str(Path(tmp) / n))
+        registry.save(doc, cfg)
+        return cfg
+
+    def _restore(self, cfg, names, **patches):
+        from unittest import mock
+        from lifeproj import archive
+        pulled = []
+        with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+             mock.patch.object(archive, "_run", side_effect=lambda a: pulled.append(a[-1]) or 0):
+            err = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                rc = cli.main(["restore", *names, "--config", str(cfg)])
+        return rc, pulled, err.getvalue()
+
+    def test_a_pull_without_catalog_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._cfg(tmp, ["hollow"])
+            rc, pulled, err = self._restore(cfg, ["hollow"])   # fake pull writes nothing
+            self.assertEqual(rc, 1)
+            self.assertEqual(pulled, ["hollow"])
+            self.assertIn("not a usable teka", err)
+
+    def test_a_filesystem_error_fails_only_that_teka(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._cfg(tmp, ["blocked", "fine"])
+            (Path(tmp) / "tekas").mkdir()
+            (Path(tmp) / "tekas" / "blocked").write_text("a file, not a dir")
+            rc, pulled, err = self._restore(cfg, ["blocked", "fine"])
+            self.assertEqual(rc, 1)
+            self.assertEqual(pulled, ["fine"])
+            self.assertIn("error: blocked:", err)
