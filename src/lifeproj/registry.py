@@ -114,10 +114,11 @@ def set_teka_home(doc: TOMLDocument, path: Path) -> None:
 
 
 def rehome_missing(doc: TOMLDocument, root: Path, key: str = "encrypted_dir",
-                   sections: tuple = (ACTIVE,)) -> list:
+                   sections: tuple = (ACTIVE,), need_dir: bool = False) -> list:
     """Repoint tekas whose ``key`` path is absent on disk to ``<root>/<name>``.
     A path that exists holds real data and is never touched (moving data is
-    cmirror's business, done by hand). Mutates ``doc``; returns
+    cmirror's business, done by hand). With ``need_dir``, a path that exists
+    but is not a directory counts as absent. Mutates ``doc``; returns
     ``[(name, old, new), ...]`` for what changed.
     """
     moved = []
@@ -127,7 +128,8 @@ def rehome_missing(doc: TOMLDocument, root: Path, key: str = "encrypted_dir",
             table = sec[name]
             old = table.get(key)
             new = str(root / name)
-            if old and Path(str(old)).expanduser().exists():
+            here = Path(str(old)).expanduser() if old else None
+            if here and (here.is_dir() if need_dir else here.exists()):
                 continue
             if old is not None and str(old) == new:
                 continue

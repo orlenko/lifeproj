@@ -42,6 +42,7 @@ class CliRootTests(unittest.TestCase):
 
     def test_home_set_show_and_rehome(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())   # the home is stored resolved (/var -> /private/var)
             cfg = str(Path(tmp) / "config.toml")
             home = Path(tmp) / "tekas"
             old = Path(tmp) / "old-home" / "mila"
@@ -81,12 +82,49 @@ class CliRootTests(unittest.TestCase):
 
     def test_new_defaults_working_dir_under_home(self):
         with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
             cfg = str(Path(tmp) / "config.toml")
             home = Path(tmp) / "tekas"
             self._run(["home", str(home), "--config", cfg])
             rc, out, _ = self._run(["new", "demo", "--dry-run", "--config", cfg])
             self.assertEqual(rc, 0)
             self.assertIn(f"would create teka 'demo' at {home / 'demo'}", out)
+
+    def test_home_stores_relative_path_as_absolute(self):
+        import os
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            cfg = str(tmp / "config.toml")
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                rc, _, _ = self._run(["home", "tekas", "--config", cfg])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(rc, 0)
+            self.assertEqual(registry.teka_home(registry.load(Path(cfg))), tmp / "tekas")
+
+    def test_home_rehomes_a_working_dir_that_is_a_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            cfg = tmp / "config.toml"
+            stray = tmp / "stray"
+            stray.write_text("not a teka")
+            doc = registry.load(cfg)
+            registry.add(doc, "mila", str(stray), str(tmp / "enc" / "mila"))
+            registry.save(doc, cfg)
+            rc, out, _ = self._run(["home", str(tmp / "tekas"), "--config", str(cfg)])
+            self.assertIn("NOT A DIRECTORY", out)
+            rc, out, _ = self._run(["home", "--rehome", "--config", str(cfg)])
+            self.assertIn(f"mila: rehomed {stray} -> {tmp / 'tekas' / 'mila'}", out)
+
+    def test_new_rejects_path_like_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = str(Path(tmp) / "config.toml")
+            for bad in ("/tmp/demo", "a/b", "..", "."):
+                rc, _, err = self._run(["new", bad, "--dry-run", "--config", cfg])
+                self.assertEqual(rc, 1, bad)
+                self.assertIn("plain folder name", err)
 
     def test_root_rejects_missing_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -153,3 +191,39 @@ class CliRestoreTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertEqual(sorted(pulled), ["empty", "gone"])
             self.assertTrue((Path(tmp) / "tekas" / "gone").is_dir())
+
+            # A name also picked by --all, or repeated, is restored once.
+            pulled.clear()
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run",
+                                   side_effect=lambda a: pulled.append(a[-1]) or 0):
+                with redirect_stdout(io.StringIO()):
+                    cli.main(["restore", "gone", "gone", "--all", "--config", str(cfg)])
+            self.assertEqual(sorted(pulled), ["empty", "gone"])
+
+    def test_restore_continues_past_a_post_pull_failure(self):
+        from unittest import mock
+        from lifeproj import archive, equip
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            doc = registry.load(cfg)
+            for n in ("a", "b"):
+                registry.add(doc, n, str(Path(tmp) / "tekas" / n), str(Path(tmp) / n))
+            registry.save(doc, cfg)
+            calls = []
+
+            def flaky(wd, **kw):
+                calls.append(wd.name)
+                if wd.name == "a":
+                    raise PermissionError("AGENTS.md unreadable")
+                return {"actions": []}
+
+            with mock.patch.object(archive, "_cmirror", return_value="cmirror"), \
+                 mock.patch.object(archive, "_run", return_value=0), \
+                 mock.patch.object(equip, "equip_teka", side_effect=flaky):
+                err = io.StringIO()
+                with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                    rc = cli.main(["restore", "a", "b", "--config", str(cfg)])
+            self.assertEqual(rc, 1)
+            self.assertEqual(calls, ["a", "b"])
+            self.assertIn("post-pull setup failed", err.getvalue())

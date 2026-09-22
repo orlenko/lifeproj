@@ -41,6 +41,24 @@ class StalePathTests(unittest.TestCase):
         self.assertIn("/Users/old/personal/strata", (self.wd / "notes.md").read_text())
         self.assertEqual(r["remaining"], [("notes.md", 1)])
 
+    def test_data_json_is_not_rewritten(self):
+        (self.wd / "catalog.json").write_text('{"log": "moved /Users/old/personal/strata"}\n')
+        r = stale_paths.scan(self.wd, old_home=Path("/Users/old/personal"),
+                             fix=True, home=self.home)
+        self.assertNotIn("catalog.json", r["fixed"])
+        self.assertIn("/Users/old/personal", (self.wd / "catalog.json").read_text())
+        self.assertIn(("catalog.json", 1), r["remaining"])
+
+    def test_tilde_path_maps_to_absolute_home_outside_user_home(self):
+        ext = Path(self._tmp.name) / "Volumes" / "tekas" / "strata"
+        (ext / "scripts").mkdir(parents=True)
+        (ext / "scripts" / "hook.sh").write_text("~/personal/strata/run\n")
+        r = stale_paths.scan(ext, old_home=Path("/Users/old/personal"),
+                             fix=True, home=self.home)
+        self.assertEqual(r["fixed"], ["scripts/hook.sh"])
+        self.assertEqual((ext / "scripts" / "hook.sh").read_text(),
+                         f"{ext.parent}/strata/run\n")
+
     def test_own_home_is_not_stale(self):
         (self.wd / "scripts" / "run.sh").write_text(f"{self.home}/tekas/strata\n")
         (self.wd / "notes.md").unlink()

@@ -18,8 +18,11 @@ from pathlib import Path
 from typing import Optional
 
 # Rewritten only in these: code and config, where a stale path breaks something.
-CODE_SUFFIXES = {".py", ".sh", ".zsh", ".bash", ".json", ".toml", ".plist",
+CODE_SUFFIXES = {".py", ".sh", ".zsh", ".bash", ".toml", ".plist",
                  ".yaml", ".yml", ".env", ".cfg", ".ini"}
+# JSON is mostly data (catalog.json, verdicts, exports) whose history must
+# stand; only JSON under these tooling directories is configuration.
+CONFIG_JSON_DIRS = {".claude", ".agents", "scripts"}
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "tmp"}
 MAX_BYTES = 2_000_000
 
@@ -40,7 +43,9 @@ def _text_files(wd: Path):
             yield p, text
 
 
-def _is_code(path: Path) -> bool:
+def _is_code(path: Path, wd: Path) -> bool:
+    if path.suffix == ".json":
+        return bool(CONFIG_JSON_DIRS & set(path.relative_to(wd).parts[:-1]))
     return path.suffix in CODE_SUFFIXES or path.name == ".env"
 
 
@@ -54,8 +59,11 @@ def _rewrites(old_home: Optional[Path], new_home: Path, home: Path) -> list:
         old_user_home = f"/Users/{m.group(1)}"
         rel = str(old_home)[len(old_user_home):].strip("/")
         new_rel = os.path.relpath(new_home, home)
-        if rel and not new_rel.startswith(".."):
-            pairs.append((f"~/{rel}/", f"~/{new_rel}/"))
+        if rel:
+            # Keep the ~ form when the new home is under $HOME; otherwise the
+            # only correct spelling is absolute (e.g. /Volumes/tekas).
+            tilde_new = str(new_home) if new_rel.startswith("..") else f"~/{new_rel}"
+            pairs.append((f"~/{rel}/", tilde_new + "/"))
         pairs.append((old_user_home + "/", str(home) + "/"))
     return pairs
 
@@ -75,7 +83,7 @@ def scan(wd: Path, *, old_home: Optional[Path] = None, fix: bool = False,
     fixed, remaining = [], []
     for path, text in _text_files(wd):
         rel = str(path.relative_to(wd))
-        if fix and pairs and _is_code(path):
+        if fix and pairs and _is_code(path, wd):
             new = text
             for old, repl in pairs:
                 new = new.replace(old, repl)

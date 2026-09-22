@@ -57,6 +57,11 @@ def _modules_from_args(args) -> list:
 
 def cmd_new(args) -> int:
     name = args.name
+    # The name is a registry key and the last path component under the home;
+    # anything path-like would escape the home when joined.
+    if not name or name in (".", "..") or "/" in name or Path(name).is_absolute():
+        print(f"error: teka name {name!r} must be a plain folder name", file=sys.stderr)
+        return 1
     config = Path(args.config).expanduser() if args.config else None
     # encrypted_dir: explicit flag > configured root (`lifeproj root`) > legacy
     # default. The legacy path predates the root and may not exist any more —
@@ -190,7 +195,7 @@ def cmd_home(args) -> int:
     doc = registry.load(config)
     changed = False
     if args.path:
-        home = Path(args.path).expanduser()
+        home = Path(args.path).expanduser().resolve()
         if home.exists() and not home.is_dir():
             print(f"error: {home} exists and is not a directory", file=sys.stderr)
             return 1
@@ -208,7 +213,7 @@ def cmd_home(args) -> int:
         # `lifeproj restore` should land them under the new home.
         for name, old, new in registry.rehome_missing(
                 doc, home, key="working_dir",
-                sections=(registry.ACTIVE, registry.ARCHIVED)):
+                sections=(registry.ACTIVE, registry.ARCHIVED), need_dir=True):
             print(f"{name}: rehomed {old} -> {new}")
             changed = True
     if changed:
@@ -221,8 +226,10 @@ def cmd_home(args) -> int:
             print(f"  {name}: no working_dir in registry")
             continue
         wd = Path(str(raw)).expanduser()
-        if wd.exists():
+        if wd.is_dir():
             note = "ok" if wd.parent == home else f"ok (outside home: {wd})"
+        elif wd.exists():
+            note = f"NOT A DIRECTORY {wd} — repoint with `lifeproj home --rehome`"
         elif wd == home / name or args.rehome:
             note = f"pending restore: {wd} (`cmirror pull --project {name}`)"
         else:
@@ -261,6 +268,7 @@ def cmd_restore(args) -> int:
     if not names:
         print("error: name a teka or pass --all", file=sys.stderr)
         return 1
+    names = list(dict.fromkeys(names))   # `demo --all` or a repeated name: once
     old_home = Path(args.old_home).expanduser() if args.old_home else None
 
     rc = 0
@@ -274,11 +282,18 @@ def cmd_restore(args) -> int:
             continue
         _, table = registry.find(registry.load(config), name)
         wd = Path(str(table.get("working_dir"))).expanduser()
-        entry = equip.equip_teka(wd)
+        # The pull succeeded; a failure refreshing skills or fixing paths is
+        # this teka's problem, not a reason to leave the rest unrestored.
+        try:
+            entry = equip.equip_teka(wd)
+            report = stale_paths.scan(wd, old_home=old_home, fix=old_home is not None)
+        except (OSError, UnicodeError) as exc:
+            print(f"error: {name}: pulled, but post-pull setup failed: {exc}", file=sys.stderr)
+            rc = 1
+            continue
         changed = [f"{rel}: {act}" for rel, act in entry["actions"] if act != "current"]
         if changed:
             print("equip: " + "; ".join(changed))
-        report = stale_paths.scan(wd, old_home=old_home, fix=old_home is not None)
         for rel in report["fixed"]:
             print(f"  path fixed: {rel}")
         for rel, count in report["remaining"]:
