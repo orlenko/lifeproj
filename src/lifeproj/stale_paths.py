@@ -65,7 +65,8 @@ def _rewrites(old_home: Optional[Path], new_home: Path, home: Path) -> list:
             tilde_new = str(new_home) if new_rel.startswith("..") else f"~/{new_rel}"
             pairs.append((f"~/{rel}/", tilde_new + "/"))
         pairs.append((old_user_home + "/", str(home) + "/"))
-    return pairs
+    # Same home on both machines: nothing moved, nothing to rewrite or report.
+    return [(old, new) for old, new in pairs if old != new]
 
 
 def scan(wd: Path, *, old_home: Optional[Path] = None, fix: bool = False,
@@ -96,9 +97,9 @@ def scan(wd: Path, *, old_home: Optional[Path] = None, fix: bool = False,
             # The old home itself, when the other-user scan can't see it: it
             # sits outside /Users (/Volumes/old-tekas) or under this same
             # username. Its ~/ spelling is counted the same way.
-            prefix = pairs[0][0]
+            prefix = str(old_home).rstrip("/") + "/"
             m = _HOME_RE.match(prefix)
-            if not (m and m.group(1) != me):
+            if any(old == prefix for old, _ in pairs) and not (m and m.group(1) != me):
                 count += text.count(prefix)
             count += sum(text.count(old) for old, _ in pairs if old.startswith("~/"))
         if count:

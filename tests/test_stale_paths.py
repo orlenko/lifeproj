@@ -71,6 +71,13 @@ class StalePathTests(unittest.TestCase):
         # Only the old teka home counts; the rest of this user's home is not stale.
         self.assertIn(("notes.md", 1), r["remaining"])
 
+    def test_same_home_on_both_machines_reports_nothing(self):
+        for f in ("notes.md", "scripts/run.sh", ".claude/settings.json"):
+            (self.wd / f).unlink()
+        (self.wd / "notes.md").write_text(f"at {self.wd.parent}/strata and ~/tekas/strata\n")
+        r = stale_paths.scan(self.wd, old_home=self.wd.parent, fix=True, home=self.home)
+        self.assertEqual(r, {"fixed": [], "remaining": []})
+
     def test_own_home_is_not_stale(self):
         (self.wd / "scripts" / "run.sh").write_text(f"{self.home}/tekas/strata\n")
         (self.wd / "notes.md").unlink()
