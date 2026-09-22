@@ -59,6 +59,18 @@ class StalePathTests(unittest.TestCase):
         self.assertEqual((ext / "scripts" / "hook.sh").read_text(),
                          f"{ext.parent}/strata/run\n")
 
+    def test_old_home_outside_users_is_reported_in_prose(self):
+        (self.wd / "notes.md").write_text("was at /Volumes/old-tekas/strata\n")
+        r = stale_paths.scan(self.wd, old_home=Path("/Volumes/old-tekas"), home=self.home)
+        self.assertIn(("notes.md", 1), r["remaining"])
+
+    def test_same_username_old_home_is_reported_in_prose(self):
+        old = self.home / "personal"
+        (self.wd / "notes.md").write_text(f"was at {old}/strata, see {self.home}/x\n")
+        r = stale_paths.scan(self.wd, old_home=old, home=self.home)
+        # Only the old teka home counts; the rest of this user's home is not stale.
+        self.assertIn(("notes.md", 1), r["remaining"])
+
     def test_own_home_is_not_stale(self):
         (self.wd / "scripts" / "run.sh").write_text(f"{self.home}/tekas/strata\n")
         (self.wd / "notes.md").unlink()

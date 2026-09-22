@@ -92,10 +92,15 @@ def scan(wd: Path, *, old_home: Optional[Path] = None, fix: bool = False,
                 fixed.append(rel)
                 text = new
         count = sum(1 for m in _HOME_RE.finditer(text) if m.group(1) != me)
-        if old_home is not None:
-            for old, _ in pairs:
-                if old.startswith("~/"):
-                    count += text.count(old)
+        if pairs:
+            # The old home itself, when the other-user scan can't see it: it
+            # sits outside /Users (/Volumes/old-tekas) or under this same
+            # username. Its ~/ spelling is counted the same way.
+            prefix = pairs[0][0]
+            m = _HOME_RE.match(prefix)
+            if not (m and m.group(1) != me):
+                count += text.count(prefix)
+            count += sum(text.count(old) for old, _ in pairs if old.startswith("~/"))
         if count:
             remaining.append((rel, count))
     return {"fixed": fixed, "remaining": remaining}
