@@ -30,6 +30,11 @@ the individual teka.
 - `lifeproj equip` must remain idempotent and fleet-resilient. Preserve
   customized skill copies unless `--force` is explicit, and never overwrite
   living `AGENTS.md` or `CLAUDE.md` instructions wholesale.
+- The starter (`lifeproj` with no arguments on a terminal) composes ordinary CLI
+  commands and hands them back to the same parser. It must never grow a code
+  path of its own: to make a screen do something new, add or extend the command
+  first, then let the menu compose it. `tui.py` is plain ANSI on purpose —
+  tomlkit stays the only runtime dependency.
 - Generated tekas are intentionally not Git repositories. Do not add Git
   scaffolding or send confidential content to external services.
 - Keep `pyproject.toml` and `src/lifeproj/__init__.py` versions in sync.

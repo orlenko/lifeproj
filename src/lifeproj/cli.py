@@ -1,5 +1,6 @@
 """lifeproj command-line interface.
 
+    lifeproj                    (on a terminal: the interactive starter)
     lifeproj new <name> [--intake email,docs] [--artifact timeline,ledger] ...
     lifeproj overview
     lifeproj brief [--days 7] [--teka <name>]
@@ -19,8 +20,9 @@ import json
 import sys
 from pathlib import Path
 
-from lifeproj import (__version__, archive, brief, equip, osavul, overview,
-                      registry, route, scaffold, stale_paths, templates)
+from lifeproj import (__version__, archive, brief, equip, menu, osavul,
+                      overview, registry, route, scaffold, stale_paths,
+                      templates, tui)
 
 INTAKE_MAP = {"email": "email-intake", "docs": "docs-intake", "github": "github-source"}
 ARTIFACT_MAP = {
@@ -466,5 +468,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:]) if argv is None else list(argv)
+    # Bare `lifeproj` on a terminal opens the starter, which composes one
+    # ordinary command line and hands it straight back here — the menu adds no
+    # path of its own. Anywhere else (a pipe, a hook, a script) it stays what it
+    # always was: argparse printing the usage it demands.
+    if not argv and tui.available():
+        try:
+            chosen = menu.run()
+        except OSError:
+            chosen = []          # the terminal would not drive; fall through to usage
+        else:
+            if chosen is None:
+                return 0         # the menu was closed without choosing anything
+        if chosen:
+            argv = chosen
+            print("$ " + menu.preview(argv))
     args = build_parser().parse_args(argv)
     return args.func(args)

@@ -174,6 +174,18 @@ knowledge of my tekas?*
   Generic *mechanism* may graduate to the tap and read a per-teka config; the
   config stays local.
 
+### The starter is a view over the CLI (v0.12)
+
+`lifeproj` with no arguments on a terminal opens a menu: the registered tekas,
+what can be run on one, and a form for a new one. It is a *fourth* thing only in
+appearance — every screen composes one ordinary command line, shows it as it
+changes, and runs exactly that. Nothing is startable from the menu that is not
+startable from the shell, so there is one surface to test, document and keep
+honest, and the menu doubles as the discovery path for what the flags accept
+(each module row carries that module's own summary — `--module` otherwise
+requires knowing the name already). The remembered state is the *shape* of teka
+you tend to make, never a teka's own details.
+
 ## 7. Lifecycle, end to end
 
 1. **Create** — `lifeproj new <name> --intake … --artifact …` stamps the spine +
@@ -438,4 +450,5 @@ still a documented stub, to be wired in v2.
 - **No web app, yet** — both end-state visions (a local "Life Projects" app vs the
   terminal) share this substrate; the app is a deferrable *local* skin over the
   same files + CLI + registry, added only if a real trigger appears. Build the
-  convention now.
+  convention now. The v0.12 starter is that skin in the terminal, over the same
+  CLI: it composes commands, it does not become one.
