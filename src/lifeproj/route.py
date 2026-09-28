@@ -23,6 +23,7 @@ import sys
 import threading
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -219,10 +220,11 @@ REQUESTS_TRIM_AT = 600
 
 def _log_request(entry: dict, log_path: Optional[Path]) -> None:
     """While Jev is under evaluation: the exact body sent and the raw reply (or
-    the error), next to the decision log and joined to it by ``at``. Each call
-    is preceded by a short ``"started": true`` line with the same ``at``, so a
-    hook the harness kills mid-call still leaves a trace. Best-effort like
-    `_log`."""
+    the error), next to the decision log and joined to it by ``call``, an id
+    unique to each call (``at`` is to the second, and parallel spawns from one
+    session share it). Each call is preceded by a short ``"started": true``
+    line with the same ``call``, so a hook the harness kills mid-call still
+    leaves a trace. Best-effort like `_log`."""
     try:
         path = (log_path or default_log_path()).with_name(REQUESTS_NAME)
         if str(log_path) == os.devnull:
@@ -260,6 +262,7 @@ def route(description: str, *, domain: Optional[str] = None,
     through ``extra_questions`` come back in ``scores`` under their ids."""
     result = {"model": FALLBACK, "routed": False, "why": [], "scores": {}}
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    call = uuid.uuid4().hex[:12]
     api_key = os.environ.get("TYPESAFE_API_KEY")
     if not description.strip():
         result["why"] = ["empty task description"]
@@ -268,8 +271,9 @@ def route(description: str, *, domain: Optional[str] = None,
     else:
         body = build_request(description, domain=domain, facts=facts,
                              extra_state=extra_state, extra_questions=extra_questions)
-        _log_request({"at": at, **(log_fields or {}), "started": True}, log_path)
-        exchange = {"at": at, **(log_fields or {}), "request": body}
+        _log_request({"at": at, "call": call, **(log_fields or {}), "started": True},
+                     log_path)
+        exchange = {"at": at, "call": call, **(log_fields or {}), "request": body}
         started = datetime.datetime.now()
         try:
             reply = _within(TIMEOUT_S, lambda: post(body, api_key))
@@ -295,7 +299,7 @@ def route(description: str, *, domain: Optional[str] = None,
         exchange.update(annotate(result) if annotate else {})
         _log_request(exchange, log_path)
 
-    _log({"at": at,
+    _log({"at": at, "call": call,
           "domain": domain, "description": clip(description, 500), **result,
           **(log_fields or {}), **(annotate(result) if annotate else {})}, log_path)
     return result

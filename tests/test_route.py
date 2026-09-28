@@ -119,9 +119,9 @@ class RouteTest(unittest.TestCase):
         decision = json.loads(self.log.read_text())
         started, exchange = map(json.loads,
                                 (self.log.parent / route.REQUESTS_NAME).read_text().splitlines())
-        self.assertEqual(started, {"at": decision["at"], "kind": "prompt", "session": "s1",
-                                   "started": True})
-        self.assertEqual(exchange["at"], decision["at"])
+        self.assertEqual(started, {"at": decision["at"], "call": decision["call"],
+                                   "kind": "prompt", "session": "s1", "started": True})
+        self.assertEqual((exchange["at"], exchange["call"]), (decision["at"], decision["call"]))
         self.assertEqual((exchange["kind"], exchange["session"]), ("prompt", "s1"))
         self.assertEqual(exchange["request"]["state"]["previous_assistant_reply"], "file both?")
         self.assertEqual(exchange["request"]["questions"], route.QUESTIONS)
@@ -153,6 +153,17 @@ class RouteTest(unittest.TestCase):
         lines = (self.log.parent / route.REQUESTS_NAME).read_text().splitlines()
         self.assertEqual(len(lines), 1)
         self.assertIs(json.loads(lines[0])["started"], True)
+
+    def test_calls_in_the_same_second_stay_distinguishable(self):
+        # Parallel spawns from one session share `at` and the log fields.
+        post = mock.Mock(return_value={"answers": answers(1, 1)})
+        for _ in range(2):
+            route.route("x", log_path=self.log, post=post, log_fields={"session": "s1"})
+        lines = [json.loads(line) for line in
+                 (self.log.parent / route.REQUESTS_NAME).read_text().splitlines()]
+        first, second = lines[0]["call"], lines[2]["call"]
+        self.assertNotEqual(first, second)
+        self.assertEqual([e["call"] for e in lines], [first, first, second, second])
 
     def test_whole_call_is_bounded(self):
         # A post blocked where no socket timeout reaches (getaddrinfo on a
