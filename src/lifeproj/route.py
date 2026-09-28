@@ -20,8 +20,10 @@ import datetime
 import json
 import os
 import sys
+import threading
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -29,6 +31,10 @@ API_URL = "https://api.typesafe.ai/v1/systemone"
 # Pinned, not `jev-latest`: the thresholds below were tuned against this
 # version, and an alias moves without a change on our side.
 JEV_MODEL = "jev-1.13.0"
+# The whole call — DNS, connects, TLS, reply — gets this long, well inside the
+# 20s the hooks are given. urlopen's own timeout is per socket operation, and
+# api.typesafe.ai resolves to four addresses, so on its own it bounds neither
+# the total nor getaddrinfo.
 TIMEOUT_S = 8
 
 TIERS = ("haiku", "sonnet", "opus", "fable")
@@ -170,6 +176,28 @@ def decide(answers: dict) -> tuple[str, list]:
     return tier, why
 
 
+def _within(seconds: float, call: Callable[[], dict]) -> dict:
+    """Run ``call`` with a wall-clock limit. A call still blocked when time runs
+    out (in getaddrinfo, say) is left behind on a daemon thread, which does not
+    hold up the process exiting."""
+    outcome: dict = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = call()
+        except Exception as exc:    # re-raised in the caller's thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no reply within {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 def _post(body: dict, api_key: str) -> dict:
     req = urllib.request.Request(
         API_URL, json.dumps(body).encode(),
@@ -192,8 +220,11 @@ REQUESTS_TRIM_AT = 600
 
 def _log_request(entry: dict, log_path: Optional[Path]) -> None:
     """While Jev is under evaluation: the exact body sent and the raw reply (or
-    the error), next to the decision log and joined to it by ``at``. Best-effort
-    like `_log`."""
+    the error), next to the decision log and joined to it by ``call``, an id
+    unique to each call (``at`` is to the second, and parallel spawns from one
+    session share it). Each call is preceded by a short ``"started": true``
+    line with the same ``call``, so a hook the harness kills mid-call still
+    leaves a trace. Best-effort like `_log`."""
     try:
         path = (log_path or default_log_path()).with_name(REQUESTS_NAME)
         if str(log_path) == os.devnull:
@@ -231,6 +262,7 @@ def route(description: str, *, domain: Optional[str] = None,
     through ``extra_questions`` come back in ``scores`` under their ids."""
     result = {"model": FALLBACK, "routed": False, "why": [], "scores": {}}
     at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    call = uuid.uuid4().hex[:12]
     api_key = os.environ.get("TYPESAFE_API_KEY")
     if not description.strip():
         result["why"] = ["empty task description"]
@@ -239,10 +271,12 @@ def route(description: str, *, domain: Optional[str] = None,
     else:
         body = build_request(description, domain=domain, facts=facts,
                              extra_state=extra_state, extra_questions=extra_questions)
-        exchange = {"at": at, **(log_fields or {}), "request": body}
+        _log_request({"at": at, "call": call, **(log_fields or {}), "started": True},
+                     log_path)
+        exchange = {"at": at, "call": call, **(log_fields or {}), "request": body}
         started = datetime.datetime.now()
         try:
-            reply = post(body, api_key)
+            reply = _within(TIMEOUT_S, lambda: post(body, api_key))
             exchange["response"] = reply
             answers = reply["answers"]
             result["model"], result["why"] = decide(answers)
@@ -265,7 +299,7 @@ def route(description: str, *, domain: Optional[str] = None,
         exchange.update(annotate(result) if annotate else {})
         _log_request(exchange, log_path)
 
-    _log({"at": at,
+    _log({"at": at, "call": call,
           "domain": domain, "description": clip(description, 500), **result,
           **(log_fields or {}), **(annotate(result) if annotate else {})}, log_path)
     return result

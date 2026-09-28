@@ -1,6 +1,8 @@
 import io
 import json
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
@@ -115,8 +117,11 @@ class RouteTest(unittest.TestCase):
                     log_fields={"kind": "prompt", "session": "s1"},
                     annotate=lambda r: {"delegate": True})
         decision = json.loads(self.log.read_text())
-        exchange = json.loads((self.log.parent / route.REQUESTS_NAME).read_text())
-        self.assertEqual(exchange["at"], decision["at"])
+        started, exchange = map(json.loads,
+                                (self.log.parent / route.REQUESTS_NAME).read_text().splitlines())
+        self.assertEqual(started, {"at": decision["at"], "call": decision["call"],
+                                   "kind": "prompt", "session": "s1", "started": True})
+        self.assertEqual((exchange["at"], exchange["call"]), (decision["at"], decision["call"]))
         self.assertEqual((exchange["kind"], exchange["session"]), ("prompt", "s1"))
         self.assertEqual(exchange["request"]["state"]["previous_assistant_reply"], "file both?")
         self.assertEqual(exchange["request"]["questions"], route.QUESTIONS)
@@ -128,14 +133,51 @@ class RouteTest(unittest.TestCase):
     def test_request_log_records_failures_and_rolls(self):
         route.route("x", log_path=self.log, post=mock.Mock(side_effect=TimeoutError("slow")))
         path = self.log.parent / route.REQUESTS_NAME
-        exchange = json.loads(path.read_text())
+        exchange = json.loads(path.read_text().splitlines()[-1])
         self.assertIn("TimeoutError", exchange["error"])
         self.assertIsNone(exchange["decision"])
-        path.write_text("".join(f'{{"n": {i}}}\n' for i in range(route.REQUESTS_TRIM_AT)))
+        # One short of the limit: the started line fills it, the completion trims.
+        path.write_text("".join(f'{{"n": {i}}}\n' for i in range(route.REQUESTS_TRIM_AT - 1)))
         route.route("x", log_path=self.log, post=mock.Mock(return_value={"answers": answers(1, 1)}))
         lines = path.read_text().splitlines()
         self.assertEqual(len(lines), route.REQUESTS_KEEP)
+        self.assertIs(json.loads(lines[-2])["started"], True)
         self.assertEqual(json.loads(lines[-1])["decision"], "haiku")
+
+    def test_a_killed_call_leaves_its_started_line(self):
+        def killed(body, key):
+            raise SystemExit    # stands in for the harness killing the hook
+        with self.assertRaises(SystemExit), \
+                mock.patch.object(route, "_within", lambda s, call: call()):
+            route.route("x", log_path=self.log, post=killed)
+        lines = (self.log.parent / route.REQUESTS_NAME).read_text().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertIs(json.loads(lines[0])["started"], True)
+
+    def test_calls_in_the_same_second_stay_distinguishable(self):
+        # Parallel spawns from one session share `at` and the log fields.
+        post = mock.Mock(return_value={"answers": answers(1, 1)})
+        for _ in range(2):
+            route.route("x", log_path=self.log, post=post, log_fields={"session": "s1"})
+        lines = [json.loads(line) for line in
+                 (self.log.parent / route.REQUESTS_NAME).read_text().splitlines()]
+        first, second = lines[0]["call"], lines[2]["call"]
+        self.assertNotEqual(first, second)
+        self.assertEqual([e["call"] for e in lines], [first, first, second, second])
+
+    def test_whole_call_is_bounded(self):
+        # A post blocked where no socket timeout reaches (getaddrinfo on a
+        # stalled resolver) still ends at TIMEOUT_S, as a quiet fallback.
+        release = threading.Event()
+        self.addCleanup(release.set)
+        post = mock.Mock(side_effect=lambda body, key: release.wait(30))
+        begun = time.monotonic()
+        with mock.patch.object(route, "TIMEOUT_S", 0.2):
+            result = route.route("x", log_path=self.log, post=post)
+        self.assertLess(time.monotonic() - begun, 2)
+        self.assertEqual((result["model"], result["routed"]), (route.FALLBACK, False))
+        exchange = json.loads((self.log.parent / route.REQUESTS_NAME).read_text().splitlines()[-1])
+        self.assertIn("TimeoutError: no reply within 0.2s", exchange["error"])
 
     def test_service_failure_falls_back(self):
         for exc in (urllib.error.URLError("down"), TimeoutError(), ValueError("bad json")):
