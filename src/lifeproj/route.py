@@ -20,6 +20,7 @@ import datetime
 import json
 import os
 import sys
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,6 +30,10 @@ API_URL = "https://api.typesafe.ai/v1/systemone"
 # Pinned, not `jev-latest`: the thresholds below were tuned against this
 # version, and an alias moves without a change on our side.
 JEV_MODEL = "jev-1.13.0"
+# The whole call — DNS, connects, TLS, reply — gets this long, well inside the
+# 20s the hooks are given. urlopen's own timeout is per socket operation, and
+# api.typesafe.ai resolves to four addresses, so on its own it bounds neither
+# the total nor getaddrinfo.
 TIMEOUT_S = 8
 
 TIERS = ("haiku", "sonnet", "opus", "fable")
@@ -170,6 +175,28 @@ def decide(answers: dict) -> tuple[str, list]:
     return tier, why
 
 
+def _within(seconds: float, call: Callable[[], dict]) -> dict:
+    """Run ``call`` with a wall-clock limit. A call still blocked when time runs
+    out (in getaddrinfo, say) is left behind on a daemon thread, which does not
+    hold up the process exiting."""
+    outcome: dict = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = call()
+        except Exception as exc:    # re-raised in the caller's thread
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no reply within {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
 def _post(body: dict, api_key: str) -> dict:
     req = urllib.request.Request(
         API_URL, json.dumps(body).encode(),
@@ -192,8 +219,10 @@ REQUESTS_TRIM_AT = 600
 
 def _log_request(entry: dict, log_path: Optional[Path]) -> None:
     """While Jev is under evaluation: the exact body sent and the raw reply (or
-    the error), next to the decision log and joined to it by ``at``. Best-effort
-    like `_log`."""
+    the error), next to the decision log and joined to it by ``at``. Each call
+    is preceded by a short ``"started": true`` line with the same ``at``, so a
+    hook the harness kills mid-call still leaves a trace. Best-effort like
+    `_log`."""
     try:
         path = (log_path or default_log_path()).with_name(REQUESTS_NAME)
         if str(log_path) == os.devnull:
@@ -239,10 +268,11 @@ def route(description: str, *, domain: Optional[str] = None,
     else:
         body = build_request(description, domain=domain, facts=facts,
                              extra_state=extra_state, extra_questions=extra_questions)
+        _log_request({"at": at, **(log_fields or {}), "started": True}, log_path)
         exchange = {"at": at, **(log_fields or {}), "request": body}
         started = datetime.datetime.now()
         try:
-            reply = post(body, api_key)
+            reply = _within(TIMEOUT_S, lambda: post(body, api_key))
             exchange["response"] = reply
             answers = reply["answers"]
             result["model"], result["why"] = decide(answers)
